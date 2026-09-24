@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/features/auth";
 import { addFollow, deleteFollow } from "@/features/users/api";
 import { useMessages } from "@/i18n";
 import { useApiErrorMessage } from "@/lib/api";
@@ -16,6 +18,11 @@ type FollowButtonProps = {
 function FollowButton({ userId, initialIsFollowed, className }: FollowButtonProps) {
     const m = useMessages();
     const resolveApiError = useApiErrorMessage();
+    // Following is an operator mutation: visitors without a session go to
+    // login (with the return path) instead of a POST the server rejects.
+    const { status } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
     // Refresh cached lists after a successful toggle so a return-visit re-seeds the
     // embedded is_followed state (user-following / search-user lists); the in-view
     // button is already covered by local state below.
@@ -25,6 +32,11 @@ function FollowButton({ userId, initialIsFollowed, className }: FollowButtonProp
     // re-seeds is_followed from a fresh refetch); the optimistic value wins while pending.
     const [followed, setFollowed] = usePropSyncedState(initialIsFollowed, pending);
     const [errorTitle, setErrorTitle] = useState<string | null>(null);
+
+    // Public mode: follow is a login-state control — hide it entirely (the
+    // redirect target /login no longer exists). Local mode keeps the button
+    // and its Sign in bounce for guests, pixel-identical to before.
+    if (status?.public_read && !status?.authenticated) return null;
 
     // null means Pixiv didn't tell us (e.g., the viewer is the user themselves);
     // disable the action rather than guess.
@@ -43,6 +55,13 @@ function FollowButton({ userId, initialIsFollowed, className }: FollowButtonProp
 
     const onClick = async () => {
         if (pending) return;
+        if (!status?.authenticated) {
+            // Local guest: bounce to login with the return path. Public mode
+            // never reaches here (the button is hidden) — never navigate a
+            // guest at the now-hidden /login route.
+            if (!status?.public_read) navigate("/login", { state: { from: location } });
+            return;
+        }
         const next = !followed;
         setFollowed(next);
         setPending(true);

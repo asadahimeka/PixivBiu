@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api, type components, unwrap } from "@/lib/api";
+import type { AuthQueryScope } from "@/lib/query/auth-scope";
 import { offsetInfiniteQueryOptions } from "@/lib/query/offset-infinite-query-options";
 
 export type Restrict = components["schemas"]["Restrict"];
@@ -80,16 +81,20 @@ export async function listFollowingIllusts(
 }
 
 // Infinite query factories for the home feeds (load-more UX). Both are offset-paged.
-export function recommendedInfiniteQueryOptions(params: ListRecommendedParams) {
+// The scope segment keys identity-dependent feeds (recommendations and the
+// following feed read through whoever the server authenticates as — the pool
+// identity for anonymous sessions, the operator account after login) so an
+// anonymous → login transition never reuses the other identity's cache.
+export function recommendedInfiniteQueryOptions(params: ListRecommendedParams, scope: AuthQueryScope) {
     return offsetInfiniteQueryOptions<IllustPage>({
-        queryKey: ["recommended-infinite", params],
+        queryKey: [scope, "recommended-infinite", params],
         fetchPage: (offset) => listRecommended({ ...params, offset }).then(unwrap),
     });
 }
 
-export function followingInfiniteQueryOptions(params: ListFollowingIllustsParams) {
+export function followingInfiniteQueryOptions(params: ListFollowingIllustsParams, scope: AuthQueryScope) {
     return offsetInfiniteQueryOptions<IllustPage>({
-        queryKey: ["following-infinite", params],
+        queryKey: [scope, "following-infinite", params],
         fetchPage: (offset) => listFollowingIllusts({ ...params, offset }).then(unwrap),
     });
 }

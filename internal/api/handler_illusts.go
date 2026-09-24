@@ -12,11 +12,11 @@ import (
 )
 
 func (h *APIHandler) GetIllust(w http.ResponseWriter, r *http.Request, id IllustIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.IllustDetailResponse, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.IllustDetailResponse, error) {
 		return c.IllustDetail(r.Context(), pixivgo.IllustDetailParams{
 			IllustID: int(id),
 		})
@@ -29,11 +29,11 @@ func (h *APIHandler) GetIllust(w http.ResponseWriter, r *http.Request, id Illust
 }
 
 func (h *APIHandler) GetUgoiraMetadata(w http.ResponseWriter, r *http.Request, id IllustIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.UgoiraMetadataResponse, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.UgoiraMetadataResponse, error) {
 		return c.UgoiraMetadata(r.Context(), pixivgo.UgoiraMetadataParams{
 			IllustID: int(id),
 		})
@@ -46,11 +46,11 @@ func (h *APIHandler) GetUgoiraMetadata(w http.ResponseWriter, r *http.Request, i
 }
 
 func (h *APIHandler) ListRanking(w http.ResponseWriter, r *http.Request, params ListRankingParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.IllustListResponse, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.IllustListResponse, error) {
 		return c.IllustRanking(r.Context(), pixivgo.IllustRankingParams{
 			Mode:   pixivgo.RankingMode(derefEnum(params.Mode)),
 			Filter: pixivgo.Filter(derefEnum(params.ClientMode)),
@@ -66,11 +66,11 @@ func (h *APIHandler) ListRanking(w http.ResponseWriter, r *http.Request, params 
 }
 
 func (h *APIHandler) ListRecommended(w http.ResponseWriter, r *http.Request, params ListRecommendedParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.IllustListResponse, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.IllustListResponse, error) {
 		return c.IllustRecommended(r.Context(), pixivgo.IllustRecommendedParams{
 			ContentType:           pixivgo.IllustType(derefEnum(params.Type)),
 			Filter:                pixivgo.Filter(derefEnum(params.ClientMode)),
@@ -86,11 +86,11 @@ func (h *APIHandler) ListRecommended(w http.ResponseWriter, r *http.Request, par
 }
 
 func (h *APIHandler) ListFollowingIllusts(w http.ResponseWriter, r *http.Request, params ListFollowingIllustsParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.IllustListResponse, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.IllustListResponse, error) {
 		return c.IllustFollow(r.Context(), pixivgo.IllustFollowParams{
 			Restrict: pixivgo.Restrict(derefEnum(params.Restrict)),
 			Offset:   i64OptToIntOpt(params.Offset),
@@ -104,11 +104,11 @@ func (h *APIHandler) ListFollowingIllusts(w http.ResponseWriter, r *http.Request
 }
 
 func (h *APIHandler) GetBookmarkDetail(w http.ResponseWriter, r *http.Request, id IllustIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.BookmarkDetailResponse, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.BookmarkDetailResponse, error) {
 		return c.IllustBookmarkDetail(r.Context(), pixivgo.IllustBookmarkDetailParams{
 			IllustID: int(id),
 		})
@@ -124,7 +124,7 @@ func (h *APIHandler) GetBookmarkDetail(w http.ResponseWriter, r *http.Request, i
 }
 
 func (h *APIHandler) AddBookmark(w http.ResponseWriter, r *http.Request, id IllustIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -150,7 +150,7 @@ func (h *APIHandler) AddBookmark(w http.ResponseWriter, r *http.Request, id Illu
 }
 
 func (h *APIHandler) DeleteBookmark(w http.ResponseWriter, r *http.Request, id IllustIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}

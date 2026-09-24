@@ -2,6 +2,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { MouseEvent } from "react";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/features/auth";
 import { BookmarkRestrictOptions } from "@/features/illusts/components/bookmark-restrict-options";
 import { useIllustBookmark } from "@/features/illusts/use-illust-bookmark";
 import { formatCount } from "@/lib/format";
@@ -16,6 +17,7 @@ type IllustBookmarkButtonProps = {
 };
 
 function IllustBookmarkButton({ illustId, isBookmarked, bookmarkCount, className }: IllustBookmarkButtonProps) {
+    const { status } = useAuth();
     const {
         bookmarked,
         count,
@@ -32,6 +34,11 @@ function IllustBookmarkButton({ illustId, isBookmarked, bookmarkCount, className
         toggle,
         pickRestrict,
     } = useIllustBookmark({ illustId, isBookmarked, bookmarkCount });
+
+    // Public mode: bookmark is a login-state control — hide the card's count
+    // button (its redirect target /login no longer exists). Local mode keeps
+    // it for guests, pixel-identical.
+    if (status?.public_read && !status?.authenticated) return null;
 
     const onClick = (e: MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();

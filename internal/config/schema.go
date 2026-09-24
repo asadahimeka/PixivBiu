@@ -16,10 +16,11 @@ import (
 type GoType string
 
 const (
-	GoTypeString   GoType = "string"
-	GoTypeInt      GoType = "int"
-	GoTypeBool     GoType = "bool"
-	GoTypeDuration GoType = "duration"
+	GoTypeString      GoType = "string"
+	GoTypeInt         GoType = "int"
+	GoTypeBool        GoType = "bool"
+	GoTypeDuration    GoType = "duration"
+	GoTypeStringSlice GoType = "string_slice"
 )
 
 // FieldMeta describes a single leaf setting.
@@ -153,6 +154,14 @@ func (s *Schema) walk(t reflect.Type, prefix, parentCategory string, parentProps
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			s.addLeaf(key, category, GoTypeInt, meta, defs[key], parentProps, koanfName)
+		case reflect.Slice:
+			// Only []string is a supported leaf (e.g. pixiv.service_refresh_tokens);
+			// any other element type stays unsupported so a future field can't
+			// silently enter the schema unvalidated.
+			if ft.Elem().Kind() != reflect.String {
+				return fmt.Errorf("walk %q: unsupported slice element type %s", key, ft.Elem())
+			}
+			s.addLeaf(key, category, GoTypeStringSlice, meta, defs[key], parentProps, koanfName)
 		default:
 			return fmt.Errorf("walk %q: unsupported kind %s", key, ft.Kind())
 		}
@@ -180,6 +189,8 @@ func (s *Schema) addLeaf(key, category string, goType GoType, meta cfgTag, def a
 		fm.Max = meta.max
 	case GoTypeBool:
 		fm.JSONType = "boolean"
+	case GoTypeStringSlice:
+		fm.JSONType = "array"
 	case GoTypeDuration, GoTypeString:
 		fm.JSONType = "string"
 	}
@@ -215,6 +226,9 @@ func (s *Schema) addLeaf(key, category string, goType GoType, meta cfgTag, def a
 		js["format"] = "duration"
 		js["x-cfg-go-type"] = "duration"
 		js["pattern"] = `^[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$`
+	}
+	if goType == GoTypeStringSlice {
+		js["items"] = map[string]any{"type": "string"}
 	}
 	if category != "" {
 		js["x-cfg-category"] = category

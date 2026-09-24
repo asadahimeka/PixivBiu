@@ -189,7 +189,7 @@ function IllustCard({ illust, selected = false, selectMode = false, onSelect }: 
                     </div>
                 </div>
 
-                {selectable && <IllustDownloadButton illustId={illust.id} />}
+                {selectable && <IllustDownloadButton illust={illust} />}
             </div>
 
             <div className="px-3.5 pt-1 pb-3.5">

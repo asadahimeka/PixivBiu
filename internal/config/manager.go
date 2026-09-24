@@ -605,6 +605,20 @@ func validateValue(fm *FieldMeta, v any) error {
 		if _, err := time.ParseDuration(s); err != nil {
 			return fmt.Errorf("invalid duration: %w", err)
 		}
+	case GoTypeStringSlice:
+		switch vv := v.(type) {
+		case []string:
+			return nil
+		case []any:
+			for i, e := range vv {
+				if _, ok := e.(string); !ok {
+					return fmt.Errorf("expected string at index %d, got %T", i, e)
+				}
+			}
+			return nil
+		default:
+			return fmt.Errorf("expected array of strings, got %T", v)
+		}
 	}
 	return nil
 }

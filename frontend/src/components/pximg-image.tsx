@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { rewritePximgUrl } from "@/lib/pixiv-image";
+import { rewritePximgCandidates } from "@/lib/pixiv-image";
 import { cn } from "@/lib/utils";
 
 type PximgImageProps = {
@@ -15,10 +15,15 @@ type PximgImageProps = {
 };
 
 function PximgImage({ src, alt, fallback, className, fit = "cover", onLoad }: PximgImageProps) {
-    const url = rewritePximgUrl(src);
+    // Ordered try-list: public proxies first, same-origin backend proxy last.
+    const candidates = rewritePximgCandidates(src);
     const imgRef = useRef<HTMLImageElement>(null);
     const [loaded, setLoaded] = useState(false);
     const [errored, setErrored] = useState(false);
+    // Which candidate the <img> is currently showing; onError advances it.
+    const [srcIndex, setSrcIndex] = useState(0);
+    const index = Math.min(srcIndex, Math.max(candidates.length - 1, 0));
+    const url = candidates[index] ?? "";
 
     // Reveal only after the full frame is decoded, so images don't paint
     // top-to-bottom. decode() is driven by the load event / cache-hit check
@@ -32,10 +37,17 @@ function PximgImage({ src, alt, fallback, className, fit = "cover", onLoad }: Px
         onLoad?.(img);
     };
 
+    // A new source starts back at the first candidate.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: re-run only on src change
+    useEffect(() => {
+        setSrcIndex(0);
+    }, [src]);
+
     // A cached image can finish loading before React attaches onLoad, so the
     // event never fires and the <img> would stay opacity-0 forever. Reveal the
     // already-complete case here (this also notifies onLoad — the popover
     // preview reads naturalWidth/naturalHeight from the element to size its box).
+    // Also runs when onError advances to the next candidate (url changes).
     // biome-ignore lint/correctness/useExhaustiveDependencies: re-run only on url change; handleLoaded/onLoad are recreated each render
     useEffect(() => {
         setLoaded(false);
@@ -45,6 +57,13 @@ function PximgImage({ src, alt, fallback, className, fit = "cover", onLoad }: Px
     }, [url]);
 
     if (!url) return <>{fallback}</>;
+
+    // On failure, fall through to the next candidate; only give up (show the
+    // fallback over the <img>) after the last one errors.
+    const handleError = () => {
+        if (index + 1 < candidates.length) setSrcIndex(index + 1);
+        else setErrored(true);
+    };
 
     return (
         <div className={cn("relative overflow-hidden", className)}>
@@ -59,7 +78,7 @@ function PximgImage({ src, alt, fallback, className, fit = "cover", onLoad }: Px
                     decoding="async"
                     referrerPolicy="no-referrer"
                     onLoad={(e) => handleLoaded(e.currentTarget)}
-                    onError={() => setErrored(true)}
+                    onError={handleError}
                     className={cn(
                         "absolute inset-0 size-full transition-opacity duration-300",
                         fit === "contain" ? "object-contain" : "object-cover",

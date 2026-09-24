@@ -15,7 +15,53 @@ import (
 	"github.com/txperl/PixivBiu/internal/sysproxy"
 )
 
+// ErrAuthSurfaceClosed signals that a user-login operation was attempted
+// while the public-site mode is on: the public deployment is purely
+// anonymous by design, so there is no operator session to create or manage.
+// It maps through classify's sentinel table to the existing
+// ErrorCodeNotFound (404, kind=app, empty message) — reusing that envelope is
+// correct because this is "the endpoint is unavailable in this mode", and
+// the not_found envelope is generic by design: the client localizes by code
+// and never needs a bespoke wire code (no spec change).
+var ErrAuthSurfaceClosed = errors.New("auth surface closed in public mode")
+
+// Register ErrAuthSurfaceClosed in classify's sentinel table. This lives in
+// an init here (rather than beside the other entries in handler.go) because
+// this change's file scope is limited to handler_auth.go; init runs after
+// all package-level vars, so sentinelErrors is already populated.
+func init() {
+	sentinelErrors = append(sentinelErrors, struct {
+		err    error
+		code   ErrorCode
+		status int
+	}{ErrAuthSurfaceClosed, ErrorCodeNotFound, http.StatusNotFound})
+}
+
+// publicReadEnabled reads the live public_read_enabled flag off the Service —
+// the same accessor requirePublicRead uses, so this gate and the read gate can
+// never disagree about the mode. Nil-safe: a bare handler reads as local mode.
+func (h *APIHandler) publicReadEnabled() bool {
+	return h.svc != nil && h.svc.PublicReadEnabled()
+}
+
+// requireAuthSurface rejects user-login operations while the public-site
+// mode is on: the public deployment has no operator session by design, so
+// login/logout/OAuth/connectivity onboarding are all closed. Local mode
+// (flag off) is unaffected — the same binary keeps the original single-user
+// login. GetAuthStatus deliberately skips this gate: it stays open as the
+// read-only mode signal. Errors flow only through WriteError/classify.
+func (h *APIHandler) requireAuthSurface(w http.ResponseWriter, r *http.Request) bool {
+	if h.publicReadEnabled() {
+		WriteError(w, r, ErrAuthSurfaceClosed) // sentinel → 404 not_found envelope
+		return false
+	}
+	return true
+}
+
 func (h *APIHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthSurface(w, r) {
+		return
+	}
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		WriteError(w, r, err)
@@ -30,10 +76,13 @@ func (h *APIHandler) Login(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, makeAuthStatus(tok, false))
+	writeJSON(w, http.StatusOK, makeAuthStatus(tok, false, h.publicReadEnabled()))
 }
 
 func (h *APIHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthSurface(w, r) {
+		return
+	}
 	if err := h.svc.Logout(); err != nil {
 		WriteError(w, r, err)
 		return
@@ -43,13 +92,16 @@ func (h *APIHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 func (h *APIHandler) GetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	tok, sessionExpired := h.svc.AuthSnapshot()
-	writeJSON(w, http.StatusOK, makeAuthStatus(tok, sessionExpired))
+	writeJSON(w, http.StatusOK, makeAuthStatus(tok, sessionExpired, h.publicReadEnabled()))
 }
 
 // StartOAuth issues a fresh PKCE state + verifier and hands the client back
 // the hosted Pixiv login URL. The verifier stays server-side; the client only
 // needs `state` to call ExchangeOAuth.
 func (h *APIHandler) StartOAuth(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthSurface(w, r) {
+		return
+	}
 	state, _, challenge, err := h.pkce.Issue()
 	if err != nil {
 		WriteError(w, r, err)
@@ -67,6 +119,9 @@ func (h *APIHandler) StartOAuth(w http.ResponseWriter, r *http.Request) {
 // `code` may be either the bare code or the full callback URL the user
 // pasted from the popup's address bar.
 func (h *APIHandler) ExchangeOAuth(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthSurface(w, r) {
+		return
+	}
 	var req OAuthExchangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		WriteError(w, r, err)
@@ -87,7 +142,7 @@ func (h *APIHandler) ExchangeOAuth(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, makeAuthStatus(tok, false))
+	writeJSON(w, http.StatusOK, makeAuthStatus(tok, false, h.publicReadEnabled()))
 }
 
 // CheckConnectivity probes whether Pixiv is reachable over the backend's
@@ -102,6 +157,9 @@ func (h *APIHandler) ExchangeOAuth(w http.ResponseWriter, r *http.Request) {
 // to the pre-login window: once authenticated, proxy changes belong on the
 // (auth-gated) Settings page, so we skip persisting here.
 func (h *APIHandler) CheckConnectivity(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthSurface(w, r) {
+		return
+	}
 	var req CheckConnectivityJSONRequestBody
 	if err := decodeJSON(r, &req); err != nil {
 		WriteError(w, r, err)
@@ -146,6 +204,9 @@ const detectProxyTimeout = 3 * time.Second
 // job of CheckConnectivity. Unauthenticated, matching CheckConnectivity, since
 // it's part of the pre-login flow.
 func (h *APIHandler) DetectProxies(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthSurface(w, r) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), detectProxyTimeout)
 	defer cancel()
 
@@ -199,16 +260,16 @@ func extractAuthCode(s string) string {
 // still reads as authenticated: the service renews it transparently (background
 // loop + on-401 self-heal); only a permanent refresh rejection (invalid_grant)
 // clears the refresh token.
-func makeAuthStatus(tok state.Token, sessionExpired bool) AuthStatus {
+func makeAuthStatus(tok state.Token, sessionExpired bool, publicRead bool) AuthStatus {
 	if tok.RefreshToken == "" {
-		s := AuthStatus{Authenticated: false}
+		s := AuthStatus{Authenticated: false, PublicRead: &publicRead}
 		if sessionExpired {
 			v := true
 			s.SessionExpired = &v
 		}
 		return s
 	}
-	s := AuthStatus{Authenticated: true}
+	s := AuthStatus{Authenticated: true, PublicRead: &publicRead}
 	if tok.UserID != 0 {
 		v := tok.UserID
 		s.UserId = &v

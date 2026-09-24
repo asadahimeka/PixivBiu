@@ -1,7 +1,9 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { ReactElement } from "react";
+import { type ReactElement, useEffect, useRef, useState } from "react";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/features/auth";
+import { downloadIllustViaBrowser } from "@/features/downloads/browser-download";
 import type { Illust } from "@/features/illusts/api";
 import { BookmarkRestrictOptions } from "@/features/illusts/components/bookmark-restrict-options";
 import type { IllustBookmark } from "@/features/illusts/use-illust-bookmark";
@@ -32,6 +34,7 @@ function ActionTooltip({ label, children }: { label: string; children: ReactElem
 // On error it swaps the restrict popover for an error tooltip, like the card.
 function BookmarkCell({ bookmark }: { bookmark: IllustBookmark }) {
     const m = useMessages();
+    const { status } = useAuth();
     const {
         bookmarked,
         errorTitle,
@@ -46,6 +49,10 @@ function BookmarkCell({ bookmark }: { bookmark: IllustBookmark }) {
         toggle,
         pickRestrict,
     } = bookmark;
+    // Public mode: bookmark is a login-state control — hide this cell (the
+    // download / open-on-pixiv cells beside it stay; the anonymous browser
+    // download is the Task 4 path). Local mode keeps it, pixel-identical.
+    if (status?.public_read && !status?.authenticated) return null;
     const label = bookmarked ? m.illust_action_unbookmark() : m.illust_action_bookmark();
     const cell = (
         <button
@@ -104,34 +111,74 @@ function BookmarkCell({ bookmark }: { bookmark: IllustBookmark }) {
     );
 }
 
-// Download cell — shares useIllustDownload with the card button, so the "sent"
-// check only appears once the job completes (never mid-download). The icon spins
-// while active and the percent shows in the tooltip; an enqueue/task failure
-// surfaces as a destructive tint + error tooltip.
-function DownloadCell({ illustId }: { illustId: number }) {
-    const m = useMessages();
-    const { downloading, justSent, errorTitle, percent, trigger } = useIllustDownload(illustId);
+// (moved to features/downloads/browser-download.ts so the card's download
+// button shares the exact same filename fallback)
 
+// Download cell — operator sessions keep the shared useIllustDownload machine
+// (server job; the "sent" check appears only once the job completes, never
+// mid-download). Anonymous sessions never enqueue: the click fetches through
+// rewritePximgCandidates in the browser and saves via an object URL, so no
+// POST /downloads ever leaves the tab. Appearance and position are identical
+// for both paths — same cell, spin while busy, check flash on completion;
+// the error tooltip is only reachable from the server path. The guest check
+// flash is gated on downloadIllustViaBrowser's "saved" so an opened-fallback
+// or empty run never fakes success.
+function DownloadCell({ illust }: { illust: Illust }) {
+    const m = useMessages();
+    const { status } = useAuth();
+    const authenticated = !!status?.authenticated;
+    const { downloading, justSent, errorTitle, percent, trigger } = useIllustDownload(illust.id);
+    const [guestBusy, setGuestBusy] = useState(false);
+    const [guestDone, setGuestDone] = useState(false);
+    const guestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(
+        () => () => {
+            if (guestTimerRef.current) clearTimeout(guestTimerRef.current);
+        },
+        [],
+    );
+
+    const guestDownload = async () => {
+        if (guestBusy) return;
+        setGuestBusy(true);
+        setGuestDone(false);
+        try {
+            const result = await downloadIllustViaBrowser(illust);
+            if (result === "saved") {
+                setGuestDone(true);
+                if (guestTimerRef.current) clearTimeout(guestTimerRef.current);
+                guestTimerRef.current = setTimeout(() => setGuestDone(false), 1400);
+            }
+        } finally {
+            setGuestBusy(false);
+        }
+    };
+
+    const onClick = () => {
+        if (authenticated) {
+            void trigger();
+            return;
+        }
+        void guestDownload();
+    };
+
+    const busy = downloading || guestBusy;
     const label =
         errorTitle ??
-        (downloading
+        (busy
             ? `${m.downloads_btn_downloading()}${percent != null ? ` ${Math.round(percent * 100)}%` : ""}`
             : m.downloads_btn_download());
-    const icon = justSent ? CheckIcon : downloading ? LoaderIcon : DownloadIcon;
+    const icon = justSent || guestDone ? CheckIcon : busy ? LoaderIcon : DownloadIcon;
     return (
         <ActionTooltip label={label}>
             <button
                 type="button"
-                onClick={trigger}
+                onClick={onClick}
                 aria-label={label}
                 className={cn(CELL, errorTitle && "text-destructive")}
             >
-                <HugeiconsIcon
-                    icon={icon}
-                    size={ICON_SIZE}
-                    strokeWidth={1.8}
-                    className={cn(downloading && "animate-spin")}
-                />
+                <HugeiconsIcon icon={icon} size={ICON_SIZE} strokeWidth={1.8} className={cn(busy && "animate-spin")} />
             </button>
         </ActionTooltip>
     );
@@ -142,7 +189,7 @@ function IllustActionBar({ illust, bookmark }: { illust: Illust; bookmark: Illus
     return (
         <div className="inline-flex w-fit divide-x divide-border overflow-hidden rounded-lg border border-border">
             <BookmarkCell bookmark={bookmark} />
-            <DownloadCell illustId={illust.id} />
+            <DownloadCell illust={illust} />
             <ActionTooltip label={m.illust_open_on_pixiv()}>
                 <a
                     href={`https://www.pixiv.net/artworks/${illust.id}`}

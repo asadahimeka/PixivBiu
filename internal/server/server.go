@@ -26,6 +26,13 @@ func New(cfg *config.Config, logger *slog.Logger, h *api.APIHandler) http.Handle
 		Schema:        httplog.SchemaECS,
 		RecoverPanics: true,
 	}))
+	// Per-IP read budget for API reads (public-site abuse guard): sits AFTER
+	// httplog so overflow responses still flow through RequestID → RealIP →
+	// httplog (logged with error.type=rate_limited via WriteError) and the
+	// single Recoverer stays untouched; BEFORE the generated routes so every
+	// /api/v1 handler passes through it. Health and the image proxy are
+	// exempt inside the middleware; SPA/docs are outside the API base.
+	r.Use(api.ReadRateLimit(apiBase))
 
 	// Dev docs. /docs renders Scalar API Reference; /openapi.json feeds it
 	// from the oapi-codegen embedded spec. Both sit outside /api/v1.

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Sheet } from "@/components/sheet";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/features/auth";
 import type { DownloadStatus } from "@/features/downloads";
 import {
     DOWNLOADS_PAGE_SIZE,
@@ -57,7 +58,29 @@ function DownloadsEmpty({ filter }: { filter: Filter }) {
     );
 }
 
-function DownloadsPage() {
+// Guest view: the queue/history endpoints are operator-only (anonymous reads
+// get 401), so unauthenticated visitors get a notice instead of a table their
+// session can never populate. Keeps the page shell (title) for orientation.
+function DownloadsGuestNotice() {
+    const m = useMessages();
+    return (
+        <div className="relative flex flex-col gap-4 px-7 pt-7 pb-7">
+            <header className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                <h1 className="font-semibold text-5xl text-foreground">{m.downloads_title()}</h1>
+            </header>
+            <Sheet>
+                <div className="px-[18px] py-16 text-center">
+                    <div className="font-medium text-foreground text-sm">{m.downloads_guest_notice()}</div>
+                    <div className="mt-1 text-muted-foreground text-xs">{m.downloads_guest_hint()}</div>
+                </div>
+            </Sheet>
+        </div>
+    );
+}
+
+// The operator table lives in its own component so a guest never mounts the
+// hooks that GET /downloads (they would only ever 401).
+function OperatorDownloadsPage() {
     const m = useMessages();
     const [searchParams, setSearchParams] = useSearchParams();
     const [refreshing, setRefreshing] = useState(false);
@@ -205,6 +228,15 @@ function DownloadsPage() {
             )}
         </div>
     );
+}
+
+function DownloadsPage() {
+    const { status } = useAuth();
+    // Auth resolves before RootLayout mounts children (null renders its splash),
+    // so this is only a defensive guard against a mid-logout render.
+    if (status === null) return null;
+    if (!status.authenticated) return <DownloadsGuestNotice />;
+    return <OperatorDownloadsPage />;
 }
 
 export default DownloadsPage;

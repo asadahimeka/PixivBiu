@@ -46,7 +46,10 @@ func parseStatusList(raw *string) ([]download.Status, error) {
 }
 
 func (h *APIHandler) SubmitDownload(w http.ResponseWriter, r *http.Request) {
-	if err := h.requireAuth(); err != nil {
+	// Operator-only: the gate must reject anonymous callers before the body
+	// is decoded or download.Manager is touched (prevents disk abuse while
+	// anonymous public read is open).
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -120,7 +123,7 @@ func (h *APIHandler) GetDownload(w http.ResponseWriter, r *http.Request, id Down
 }
 
 func (h *APIHandler) CancelDownload(w http.ResponseWriter, r *http.Request, id DownloadIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -132,7 +135,7 @@ func (h *APIHandler) CancelDownload(w http.ResponseWriter, r *http.Request, id D
 }
 
 func (h *APIHandler) RemoveDownload(w http.ResponseWriter, r *http.Request, id DownloadIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -144,7 +147,7 @@ func (h *APIHandler) RemoveDownload(w http.ResponseWriter, r *http.Request, id D
 }
 
 func (h *APIHandler) ClearDownloads(w http.ResponseWriter, r *http.Request, params ClearDownloadsParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}

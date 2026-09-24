@@ -336,6 +336,10 @@ export interface paths {
          *     per ugoira zip), enqueues the work, and returns the Job. The
          *     response is `202 Accepted`; the client follows progress via
          *     the `download` topic on `GET /events`.
+         *     Operator-session only: anonymous requests are rejected with `401`
+         *     before any job reaches the download manager, so the server-side
+         *     queue and disk stay operator-only even when anonymous public read
+         *     is enabled.
          */
         post: operations["SubmitDownload"];
         /**
@@ -387,7 +391,10 @@ export interface paths {
         put?: never;
         /**
          * Cancel a running download job
-         * @description Cancels every non-terminal task in the job. Returns `409` if the job is already in a terminal state.
+         * @description Cancels every non-terminal task in the job. Returns `409` if the job
+         *     is already in a terminal state. Operator-session only: anonymous
+         *     requests are rejected with `401` before the download manager is
+         *     touched.
          */
         post: operations["CancelDownload"];
         delete?: never;
@@ -812,6 +819,8 @@ export interface components {
             authenticated: boolean;
             /** Format: date-time */
             expires_at?: string | null;
+            /** @description True while the server runs in public-site mode (`pixiv.public_read_enabled` with a non-empty service token pool). User-login endpoints are closed then; the frontend hides all login affordances when set. False or absent in local single-operator mode. */
+            public_read?: boolean;
             /** @description True when the previous session was cleared because Pixiv rejected the refresh token (invalid_grant) — distinct from a first-run "never logged in" state. The login page surfaces a "session expired, please sign in again" hint when set. Only meaningful while unauthenticated; false or absent otherwise. */
             session_expired?: boolean | null;
             /** Format: int64 */

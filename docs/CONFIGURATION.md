@@ -51,7 +51,7 @@ Uppercase the dotted key, replace dots with underscores, and prepend `PIXIVBIU_`
 - `download.ugoira.format` → `PIXIVBIU_DOWNLOAD_UGOIRA_FORMAT`
 - `server.timeouts.shutdown` → `PIXIVBIU_SERVER_TIMEOUTS_SHUTDOWN`
 
-The resolver uses known schema keys to distinguish separators from literal underscores. Duration settings accept Go duration strings such as `15s`, `1m30s`, and `250ms`.
+The resolver uses known schema keys to distinguish separators from literal underscores. Duration settings accept Go duration strings such as `15s`, `1m30s`, and `250ms`. List settings (today only `pixiv.service_refresh_tokens`) accept a comma-separated env value such as `tok-a,tok-b`; their file values stay JSON arrays.
 
 ### Flags and reset behavior
 
@@ -59,7 +59,7 @@ The resolver uses known schema keys to distinguish separators from literal under
 | --- | --- |
 | restart | API writes persist now and apply after restart; pending changes appear in `pending_restart` |
 | internal | API PATCH and keyed reset reject the key; change through file/env and restart; UI is read-only |
-| sensitive | Stored in cleartext on disk, masked as `***` in API views; PATCH of `***` or an empty string is a no-op |
+| sensitive | Stored in cleartext on disk, masked as `***` in API views; PATCH of `***` or an empty string is a no-op. List secrets (such as `pixiv.service_refresh_tokens`) mask as the single string `***` too, so PATCHing the masked read-back is a no-op and the Settings form cannot rewrite them — change them through file or env, or PATCH the JSON array itself |
 | advanced | De-prioritized/folded in the Settings UI |
 | hidden | Omitted from the UI schema; remains accessible through API, file, and env |
 
@@ -134,6 +134,8 @@ Defaults below are core defaults; Docker/Desktop overrides are documented in the
 | `PIXIVBIU_PIXIV_PROXY` | *(empty)* | HTTP/SOCKS proxy URL `scheme://host` (empty = direct) | sensitive |
 | `PIXIVBIU_PIXIV_BYPASS_SNI` | `false` | bool — DoH + alternative SNI for the API (restricted networks only) | restart, hidden |
 | `PIXIVBIU_PIXIV_STATE_FILE` | `./usr/state.json` | auth-token persistence path | restart, internal |
+| `PIXIVBIU_PIXIV_SERVICE_REFRESH_TOKENS` | *(empty list)* | list — preset Pixiv refresh tokens backing anonymous public reads; empty = local single-user mode. In `settings.json` it is a JSON string array; through the environment it is comma-separated (`tok-a,tok-b`). Empty or whitespace-only entries are rejected when the configuration loads and on PATCH (an env value such as `tok-a,,tok-b` fails startup); the pool trims surrounding whitespace when building the rotation. The Settings form cannot write this secret back — it masks as `***` and PATCHing the mask is a no-op — so change it through the file, the environment, or a PATCH carrying the JSON array itself. | sensitive, advanced |
+| `PIXIVBIU_PIXIV_PUBLIC_READ_ENABLED` | `false` | bool — public-site mode: read endpoints (illustration/user/search/ranking reads and the SSE stream) accept anonymous callers through the token pool and fail closed when the pool drains; requires at least one `pixiv.service_refresh_tokens` entry. Hot — applies without restart. While enabled, *all* reads (including the signed-in operator's) authenticate upstream as pool identities, because per-browser user tokens are deferred; mutations (bookmark, follow, server-side download jobs, config/system writes) remain operator-only. The user-login surface closes as well — login, logout, OAuth, and onboarding connectivity/detection probes answer 404 `not_found`, so a public instance is purely anonymous with no admin entry — and the frontend hides every sign-in affordance in response (the open `GET /auth/status` reports `public_read`; local mode keeps the sign-in UI). | — |
 
 ## download
 

@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { useAuth } from "@/features/auth";
 import {
     addBookmark,
     deleteBookmark,
@@ -43,6 +45,13 @@ export function useIllustBookmark({ illustId, isBookmarked, bookmarkCount }: Use
     const resolveApiError = useApiErrorMessage();
     const patchCachedIllust = usePatchCachedIllust();
     const invalidateIllustLists = useInvalidateIllustLists();
+    // Bookmarks are an operator mutation: visitors without a session are
+    // routed to login (with the return path) instead of firing a POST the
+    // server would reject — this gate covers both the card button and the
+    // viewer's action cell, including the restrict popover picks.
+    const { status } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
     const [errorTitle, setErrorTitle] = useState<string | null>(null);
     const [popoverOpen, setPopoverOpen] = useState(false);
     // null = unknown (either not bookmarked, or bookmarked but detail not yet fetched).
@@ -137,15 +146,27 @@ export function useIllustBookmark({ illustId, isBookmarked, bookmarkCount }: Use
         closeTimerRef.current = setTimeout(() => setPopoverOpen(false), 120);
     };
 
+    // False when the visitor isn't signed in. Local mode bounces them to
+    // login (with the return path); public mode closed /login (route hidden),
+    // so never navigate at the dead target — the callers' controls are
+    // hidden for public-mode guests anyway, making this defense in depth.
+    const requireSession = (): boolean => {
+        if (status?.authenticated) return true;
+        if (!status?.public_read) navigate("/login", { state: { from: location } });
+        return false;
+    };
+
     // Plain click defaults to public (same as the card); private is chosen via the
     // popover's pickRestrict.
     const toggle = () => {
         if (pending) return;
+        if (!requireSession()) return;
         mutation.mutate({ add: !bookmarked, restrict: "public" });
     };
 
     const pickRestrict = (restrict: Restrict) => {
         if (pending) return;
+        if (!requireSession()) return;
         if (bookmarked && currentRestrict === restrict) return;
         mutation.mutate({ add: true, restrict });
     };

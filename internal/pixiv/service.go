@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/txperl/pixivgo"
 	"github.com/txperl/pixivgo/bypass"
@@ -45,6 +48,28 @@ type Service struct {
 	// pinned client Clone), so retries still run in parallel. Order: refreshMu before mu.
 	refreshMu sync.Mutex
 
+	// pool is the preset refresh-token pool backing anonymous public reads
+	// (pixiv.service_refresh_tokens). Guarded by mu; replaced wholesale by
+	// ReloadPool on hot config changes (in-flight Next/Evict finish against
+	// the old pool).
+	pool *Pool
+
+	// publicRead mirrors pixiv.public_read_enabled. Seeded from the startup
+	// config and updated live by SetPublicRead (the config reload hook);
+	// atomic so gate/ReadRefreshToken reads never block on the pool lock.
+	publicRead atomic.Bool
+
+	// poolSess caches one access token per pooled refresh token so anonymous
+	// reads don't re-run Auth on every request. Keyed by the pool-issued
+	// refresh token; the stored refresh may be a rotated successor. Guarded
+	// by poolSessMu (never taken while holding mu, to keep lock order
+	// poolSessMu → mu only). Cleared wholesale by ReloadPool.
+	poolSessMu sync.Mutex
+	poolSess   map[string]poolSession
+	// poolSessG single-flights concurrent exchanges of the same refresh token
+	// so a burst of anonymous reads costs one Auth call.
+	poolSessG singleflight.Group
+
 	wg   sync.WaitGroup
 	stop context.CancelFunc
 }
@@ -64,13 +89,16 @@ func NewService(cfg config.PixivConfig, logger *slog.Logger, store *state.Store)
 	}
 
 	s := &Service{
-		cfg:    cfg,
-		logger: logger,
-		store:  store,
-		client: client,
-		httpc:  httpc,
-		token:  tok,
+		cfg:      cfg,
+		logger:   logger,
+		store:    store,
+		client:   client,
+		httpc:    httpc,
+		token:    tok,
+		pool:     NewPool(cfg.ServiceRefreshTokens),
+		poolSess: make(map[string]poolSession),
 	}
+	s.publicRead.Store(cfg.PublicReadEnabled)
 
 	if !tok.IsEmpty() {
 		client.SetAuth(tok.AccessToken, tok.RefreshToken)
@@ -142,6 +170,90 @@ func (s *Service) SessionExpired() bool {
 	defer s.mu.RUnlock()
 	return s.sessionExpired
 }
+
+// PublicReadEnabled reports whether anonymous public reads are switched on
+// (pixiv.public_read_enabled, live via SetPublicRead). It is the gate's
+// mode switch: when on, reads draw only from the pool; when off, the server
+// is a local single-user app serving reads from the operator session.
+func (s *Service) PublicReadEnabled() bool { return s.publicRead.Load() }
+
+// SetPublicRead updates the public-read switch after a hot config change.
+// Invoked from the config reload hook: a single atomic store, never blocks.
+func (s *Service) SetPublicRead(v bool) { s.publicRead.Store(v) }
+
+// PoolHasTokens reports whether the anonymous service-token pool still holds
+// at least one token, without advancing the rotation cursor (read gates must
+// never call Next for an existence probe — that would steal a rotation slot).
+func (s *Service) PoolHasTokens() bool {
+	s.mu.RLock()
+	p := s.pool
+	s.mu.RUnlock()
+	return p != nil && p.HasTokens()
+}
+
+// HasUserToken exposes the per-request user-token probe to the HTTP gate so
+// requirePublicRead and ReadRefreshToken stay in lockstep. The mechanism that
+// would attach a browser-local token is explicitly deferred (public-site
+// ruling): no request carries one today, so this is always false.
+func (s *Service) HasUserToken(r *http.Request) bool { return hasUserToken(r) }
+
+// ReadRefreshToken returns the refresh token a request should authenticate
+// upstream with, and the gate semantics it must mirror exactly:
+//
+//   - User-token requests (deferred mechanism): the operator session, only
+//     while authenticated — never an anonymous fallback.
+//   - Public mode (public_read_enabled on): a token drawn from the pool ONLY.
+//     The operator session must not leak to public callers, so an empty /
+//     drained pool returns ok=false with no operator fallback — including
+//     when the operator happens to be logged in (the read gate is likewise
+//     fail-closed on PoolHasTokens in this mode).
+//   - Local mode (public_read_enabled off): the operator session, only while
+//     authenticated. Pool tokens are not used for reads; trust is the local
+//     single-user boundary (loopback bind), as before public reads existed.
+func (s *Service) ReadRefreshToken(r *http.Request) (string, bool) {
+	if hasUserToken(r) {
+		if !s.Authenticated() {
+			return "", false
+		}
+		return s.refreshToken(), true
+	}
+	if s.PublicReadEnabled() {
+		s.mu.RLock()
+		p := s.pool
+		s.mu.RUnlock()
+		if p == nil {
+			return "", false
+		}
+		return p.Next()
+	}
+	if !s.Authenticated() {
+		return "", false
+	}
+	return s.refreshToken(), true
+}
+
+// ReloadPool swaps the anonymous service-token pool after a hot change to
+// pixiv.service_refresh_tokens. Invoked from the config reload hook under the
+// Manager lock: it only replaces in-memory pointers — it never blocks, never
+// touches the settings store, and never re-enters Patch/Reset. Cached pool
+// sessions are dropped with it: a reconfigured pool may retire tokens whose
+// rotated refresh sessions must no longer be reused.
+func (s *Service) ReloadPool(tokens []string) {
+	s.mu.Lock()
+	s.pool = NewPool(tokens)
+	s.mu.Unlock()
+	s.poolSessMu.Lock()
+	s.poolSess = make(map[string]poolSession)
+	s.poolSessMu.Unlock()
+}
+
+// hasUserToken reports whether r carries the local user's own token. The exact
+// header/cookie mechanism was scoped for Task 5 but per-browser user tokens are
+// explicitly deferred by the public-site ruling, so no request carries one yet
+// and every request selects through the mode branches above. Keep the
+// *http.Request parameter: wiring the mechanism later replaces only this stub
+// body without touching ReadRefreshToken or the gate.
+func hasUserToken(*http.Request) bool { return false }
 
 // Snapshot returns a copy of the current persisted token state.
 func (s *Service) Snapshot() state.Token {

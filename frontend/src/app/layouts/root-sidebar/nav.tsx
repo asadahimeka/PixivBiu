@@ -92,6 +92,9 @@ function Nav() {
     const [search] = useSearchParams();
 
     const isLoggedIn = !!status?.authenticated && !!status.user_id;
+    // Public mode: hide the downloads entry (queue/history are operator-only
+    // surfaces) — /downloads keeps its reviewed guest notice for direct URLs.
+    const publicMode = status?.public_read === true;
     const myUserPath = isLoggedIn ? `/user/${status.user_id}` : null;
 
     const matchMyUserTab =
@@ -154,7 +157,11 @@ function Nav() {
     const groups: NavGroupDef[] = [
         browseGroup,
         { id: "personal", label: m.nav_group_personal(), items: personalItems },
-        { id: "tools", label: m.nav_group_tools(), items: [downloadsItem, settingsItem] },
+        {
+            id: "tools",
+            label: m.nav_group_tools(),
+            items: publicMode ? [settingsItem] : [downloadsItem, settingsItem],
+        },
     ];
 
     return (

@@ -83,6 +83,11 @@ type PixivConfig struct {
 	Proxy     string `koanf:"proxy"      cfg:"sensitive=true"`             // HTTP/SOCKS proxy URL (empty = direct)
 	BypassSNI bool   `koanf:"bypass_sni" cfg:"restart=true,hidden=true"`   // use DoH + alternative SNI for the API (restricted networks only); hidden from UI, file/API only
 	StateFile string `koanf:"state_file" cfg:"restart=true,internal=true"` // auth-token persistence file path
+	// ServiceRefreshTokens is the preset refresh-token pool serving anonymous
+	// public reads; empty = local single-user mode. Sensitive: never rendered
+	// in views or logged. Hot-reloadable via Service.ReloadPool.
+	ServiceRefreshTokens []string `koanf:"service_refresh_tokens" cfg:"sensitive=true,advanced=true"` // preset pool for anonymous public reads (empty = local single-user mode)
+	PublicReadEnabled    bool     `koanf:"public_read_enabled"`                                       // anonymous read via pool
 }
 
 type DownloadConfig struct {
@@ -172,21 +177,23 @@ func SetDefaultUpdateChannel(ch string) {
 // so the default can track the running build's maturity.
 var baseDefaults = sync.OnceValue(func() map[string]any {
 	return map[string]any{
-		"app.language":             "auto",
-		"app.open_browser":         true,
-		"app.update.enabled":       true,
-		"server.host":              "127.0.0.1",
-		"server.port":              4001,
-		"server.port_fallback":     true,
-		"server.timeouts.read":     "15s",
-		"server.timeouts.write":    "15s",
-		"server.timeouts.shutdown": "10s",
-		"log.level":                "info",
-		"log.format":               "text",
-		"log.file":                 "",
-		"pixiv.proxy":              "",
-		"pixiv.bypass_sni":         false,
-		"pixiv.state_file":         "./usr/state.json",
+		"app.language":                 "auto",
+		"app.open_browser":             true,
+		"app.update.enabled":           true,
+		"server.host":                  "127.0.0.1",
+		"server.port":                  4001,
+		"server.port_fallback":         true,
+		"server.timeouts.read":         "15s",
+		"server.timeouts.write":        "15s",
+		"server.timeouts.shutdown":     "10s",
+		"log.level":                    "info",
+		"log.format":                   "text",
+		"log.file":                     "",
+		"pixiv.proxy":                  "",
+		"pixiv.bypass_sni":             false,
+		"pixiv.state_file":             "./usr/state.json",
+		"pixiv.service_refresh_tokens": []string{},
+		"pixiv.public_read_enabled":    false,
 
 		"download.output_dir":            `./downloads`,
 		"download.file_template":         `{{.IllustID}}_{{.Title | trunc 80}}{{.Ext}}`,
@@ -258,6 +265,11 @@ func unmarshalConfig(k *koanf.Koanf) (*Config, error) {
 			WeaklyTypedInput: true,
 			DecodeHook: mapstructure.ComposeDecodeHookFunc(
 				mapstructure.StringToTimeDurationHookFunc(),
+				// Lets PIXIVBIU_* env values feed []string leaves (the only
+				// ones today: pixiv.service_refresh_tokens) as a comma
+				// list — "tok-a,tok-b". File-layer JSON arrays skip it
+				// (source kind is not string); empty string decodes to [].
+				mapstructure.StringToSliceHookFunc(","),
 			),
 		},
 	}); err != nil {

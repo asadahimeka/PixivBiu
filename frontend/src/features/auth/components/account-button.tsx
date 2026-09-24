@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useLocation, useNavigate } from "react-router";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -6,17 +8,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/features/auth/use-auth";
 import { useMessages } from "@/i18n";
+import { ChevronRightIcon } from "@/lib/icons";
 
 const AVATAR_GRADIENT = "linear-gradient(135deg, oklch(0.78 0.10 45), oklch(0.68 0.13 45))";
 
 function AccountButton() {
     const m = useMessages();
     const { status, pending, logout } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
 
-    // The sidebar is only ever rendered when authenticated (RootLayout guards
-    // unauth users to /login), so we only need the loading skeleton and the
-    // signed-in view here.
-    if (status === null || !status.authenticated) {
+    // Status still resolving → loading skeleton only. RootLayout no longer
+    // redirects unauthenticated users, so a confirmed guest in local
+    // (default) mode gets the sign-in entry here — the sidebar is the
+    // shell's login path.
+    if (status === null) {
         return (
             <div className="flex items-center gap-3" aria-busy="true">
                 <div className="size-8 shrink-0 animate-pulse rounded-full bg-muted" />
@@ -25,6 +31,45 @@ function AccountButton() {
                     <div className="h-2.5 w-12 animate-pulse rounded bg-muted" />
                 </div>
             </div>
+        );
+    }
+
+    // Public mode: the login surface is closed server-side (even Sign out
+    // answers 404), so the account area is a static guest row for everyone —
+    // no Sign in entry, no menu, no dead click target. Local mode keeps the
+    // sign-in button / account menu exactly as before.
+    if (status.public_read) {
+        return (
+            <div className="flex w-full items-center gap-3 px-2 py-1.5 text-left">
+                <span
+                    aria-hidden
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                >
+                    <HugeiconsIcon icon={ChevronRightIcon} size={16} strokeWidth={1.5} />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">{m.auth_guest()}</span>
+            </div>
+        );
+    }
+
+    if (!status.authenticated) {
+        return (
+            <button
+                type="button"
+                onClick={() => {
+                    navigate("/login", { state: { from: location } });
+                }}
+                aria-label={m.auth_signin()}
+                className="flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+            >
+                <span
+                    aria-hidden
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                >
+                    <HugeiconsIcon icon={ChevronRightIcon} size={16} strokeWidth={1.5} />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">{m.auth_signin()}</span>
+            </button>
         );
     }
 

@@ -1,9 +1,12 @@
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Navigate, useLocation } from "react-router";
 import LeapyOverlay from "@/components/series-leapy/leapy-overlay";
+import { Sheet } from "@/components/sheet";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { useAuth } from "@/features/auth";
 import ConfirmPopover from "@/features/downloads/components/confirm-popover";
 import {
     isFieldVisible,
@@ -35,9 +38,32 @@ const HEADER_TINT: Record<SettingsSaveState, string> = {
     none: "bg-background/85",
 };
 
+// Public-mode guest view: the login surface is closed, so unauthenticated
+// visitors get a notice instead of a redirect to the hidden /login route.
+// Keeps the page shell (title) for orientation — same pattern as the
+// downloads page's guest notice.
+function SettingsGuestNotice() {
+    const m = useMessages();
+    return (
+        <div className="relative flex flex-col gap-4 px-7 pt-7 pb-7">
+            <header className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                <h1 className="font-semibold text-5xl text-foreground">{m.settings_title()}</h1>
+            </header>
+            <Sheet>
+                <div className="px-[18px] py-16 text-center">
+                    <div className="font-medium text-foreground text-sm">{m.settings_guest_notice()}</div>
+                    <div className="mt-1 text-muted-foreground text-xs">{m.settings_guest_hint()}</div>
+                </div>
+            </Sheet>
+        </div>
+    );
+}
+
 function SettingsPage() {
     const m = useMessages();
     const resolveApiError = useApiErrorMessage();
+    const { status } = useAuth();
+    const location = useLocation();
     const { loadState, sections, view, setView, awaitRestart, schemaMismatch } = useConfig();
     const form = useConfigForm({ view, sections, onView: setView });
     // Defer the loading text so a fast config fetch (localhost) never flashes it.
@@ -97,6 +123,14 @@ function SettingsPage() {
         // restart never moves the backend to a different origin.
         void awaitRestart(keys).finally(() => setRestarting(false));
     }, [view, awaitRestart]);
+
+    // Settings is the config mutation surface — operator-only. Placed after
+    // every hook (hooks must run unconditionally even if status flips).
+    // Public mode closed /login (route hidden), so a guest sees the reviewed
+    // guest-notice pattern instead of a bounce to a dead target; local mode
+    // keeps the login redirect with its return path.
+    if (status?.public_read && !status?.authenticated) return <SettingsGuestNotice />;
+    if (!status?.authenticated) return <Navigate replace to="/login" state={{ from: location }} />;
 
     return (
         <div ref={rootRef} data-app-controls="" className="flex flex-col">

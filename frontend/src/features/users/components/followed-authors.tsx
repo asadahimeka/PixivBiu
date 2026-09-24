@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/features/auth";
 import { followingInfiniteQueryOptions, type Illust } from "@/features/illusts/api";
 import IllustPlaceholderArt from "@/features/search/components/illust-placeholder-art";
 import UserLink from "@/features/users/components/user-link";
@@ -14,6 +15,7 @@ import { useApiErrorMessage } from "@/lib/api/error-message";
 import type { components } from "@/lib/api/schema.gen";
 import { formatRelativeTime, hueFromId } from "@/lib/format";
 import { FollowIcon } from "@/lib/icons";
+import { authQueryScope } from "@/lib/query/auth-scope";
 import { cn } from "@/lib/utils";
 
 type User = components["schemas"]["User"];
@@ -36,16 +38,60 @@ type FollowedAuthorsProps = {
     onView: () => void;
 };
 
+// Split guest/operator on purpose: the guest branch must never mount the
+// /illusts/following query — that feed would come back as the POOL
+// account's follows (public-read mode serves it to anyone), which is not
+// this visitor's data. Distinct components keep each branch's hook list
+// stable across an anonymous → login transition.
 function FollowedAuthors({ onView }: FollowedAuthorsProps) {
+    const { status } = useAuth();
+    if (!status?.authenticated) return <FollowedAuthorsGuest onView={onView} />;
+    return <FollowedAuthorsList onView={onView} />;
+}
+
+function FollowedAuthorsGuest({ onView }: FollowedAuthorsProps) {
+    const m = useMessages();
+    const { status } = useAuth();
+    // Public mode has no per-visitor follows (and no login to get any):
+    // show the plain empty copy instead of the sign-in prompt, which would
+    // point at a login page that does not exist there. Local guests keep it.
+    const isPublic = status?.public_read === true;
+    return (
+        <Sheet>
+            <SheetHead
+                icon={FollowIcon}
+                title={m.user_followed_authors_title()}
+                actions={
+                    <Button variant="ghost" size="sm" onClick={onView}>
+                        {m.common_view()}
+                    </Button>
+                }
+            />
+            <SheetBody>
+                <SheetEmpty
+                    icon={FollowIcon}
+                    title={isPublic ? m.user_followed_authors_empty() : m.user_followed_authors_signin()}
+                    hint={isPublic ? m.user_followed_authors_empty_hint() : m.user_followed_authors_signin_hint()}
+                />
+            </SheetBody>
+        </Sheet>
+    );
+}
+
+function FollowedAuthorsList({ onView }: FollowedAuthorsProps) {
     const m = useMessages();
     const resolveApiError = useApiErrorMessage();
+    const { status } = useAuth();
 
     // Reuse the home Follow tab's infinite query (same `/illusts/following` feed, shared
     // cache key) and read only the first page — this panel is a glance at the authors in
     // page 1, grouped client-side. Sharing the cache means the feed is fetched once per
     // home visit (TanStack staleTime/gcTime), so returning to home no longer re-pulls, and
-    // opening the Follow tab hits the cache this panel seeded.
-    const query = useInfiniteQuery(followingInfiniteQueryOptions({ restrict: "public" }));
+    // opening the Follow tab hits the cache this panel seeded. The scope segment keeps the
+    // anonymous and signed-in identities' caches apart.
+    const query = useInfiniteQuery(
+        followingInfiniteQueryOptions({ restrict: "public" }, authQueryScope(!!status?.authenticated)),
+    );
     const illusts = query.data?.pages[0]?.illusts ?? [];
     const authors: AuthorGroup[] = groupByAuthor(illusts);
 

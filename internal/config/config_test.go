@@ -143,6 +143,24 @@ func TestEnvOverride_UnderscoredKey(t *testing.T) {
 	}
 }
 
+// The only []string leaf (pixiv.service_refresh_tokens) is fed from the
+// environment as a comma-separated list; file-layer JSON arrays must keep
+// working untouched.
+func TestEnvOverride_ServiceRefreshTokensCSV(t *testing.T) {
+	t.Setenv("PIXIVBIU_PIXIV_SERVICE_REFRESH_TOKENS", "tok-a,tok-b")
+	mgr := newMgr(t, "")
+	got := mgr.Config().Pixiv.ServiceRefreshTokens
+	want := []string{"tok-a", "tok-b"}
+	if len(got) != len(want) {
+		t.Fatalf("ServiceRefreshTokens = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ServiceRefreshTokens[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestEnvOverride_NestedWithUnderscore(t *testing.T) {
 	t.Setenv("PIXIVBIU_PIXIV_BYPASS_SNI", "true")
 	t.Setenv("PIXIVBIU_INBOX_BUFFER_SIZE", "500")
@@ -743,4 +761,87 @@ func nestedGet(m map[string]any, keys ...string) any {
 		cur = mm[k]
 	}
 	return cur
+}
+
+// New optional public-read keys: defaults keep local single-user mode,
+// file values load into PixivConfig, and the token list is treated as
+// sensitive everywhere a view is produced.
+func TestPixivPublicReadKeys_DefaultsLoadAndMask(t *testing.T) {
+	mgr := newMgr(t, "")
+	cfg := mgr.Config()
+	if len(cfg.Pixiv.ServiceRefreshTokens) != 0 {
+		t.Errorf("default ServiceRefreshTokens = %v, want empty", cfg.Pixiv.ServiceRefreshTokens)
+	}
+	if cfg.Pixiv.PublicReadEnabled {
+		t.Error("default PublicReadEnabled = true, want false")
+	}
+
+	mgr2 := newMgr(t, `{"pixiv":{"service_refresh_tokens":["tok-a","tok-b"],"public_read_enabled":true}}`)
+	cfg2 := mgr2.Config()
+	if len(cfg2.Pixiv.ServiceRefreshTokens) != 2 || cfg2.Pixiv.ServiceRefreshTokens[0] != "tok-a" || cfg2.Pixiv.ServiceRefreshTokens[1] != "tok-b" {
+		t.Errorf("ServiceRefreshTokens = %v, want [tok-a tok-b]", cfg2.Pixiv.ServiceRefreshTokens)
+	}
+	if !cfg2.Pixiv.PublicReadEnabled {
+		t.Error("PublicReadEnabled = false, want true")
+	}
+
+	view := mustView(t, mgr2)
+	if view.Sources["pixiv.service_refresh_tokens"] != SourceFile {
+		t.Errorf("tokens source = %v, want file", view.Sources["pixiv.service_refresh_tokens"])
+	}
+	if got := nestedGet(view.Effective, "pixiv", "service_refresh_tokens"); got != SensitiveMask {
+		t.Errorf("effective tokens not masked: %v", got)
+	}
+	if got := nestedGet(view.File, "pixiv", "service_refresh_tokens"); got != SensitiveMask {
+		t.Errorf("file tokens not masked: %v", got)
+	}
+}
+
+// The token list is a real schema leaf: array-of-string JSON type, flagged
+// sensitive + advanced so the UI masks it and sinks it behind the toggle.
+func TestSchema_ServiceRefreshTokensField(t *testing.T) {
+	fm := newMgr(t, "").Schema().Fields["pixiv.service_refresh_tokens"]
+	if fm == nil {
+		t.Fatal("schema missing pixiv.service_refresh_tokens")
+	}
+	if !fm.Sensitive || !fm.Advanced {
+		t.Errorf("sensitive/advanced = %v/%v, want true/true", fm.Sensitive, fm.Advanced)
+	}
+	if fm.JSONType != "array" {
+		t.Errorf("JSONType = %q, want array", fm.JSONType)
+	}
+	if fm := newMgr(t, "").Schema().Fields["pixiv.public_read_enabled"]; fm == nil || fm.GoType != GoTypeBool {
+		t.Errorf("pixiv.public_read_enabled field = %+v, want bool leaf", fm)
+	}
+}
+
+// PATCH accepts an array of strings, the value survives a reload of the
+// persisted file, the mask sentinel round-trips as a no-op, and a bare
+// string is rejected by precheck (no silent single-element wrap).
+func TestPatch_ServiceRefreshTokensArray(t *testing.T) {
+	mgr := newMgr(t, "")
+	if _, err := mgr.Patch(map[string]any{
+		"pixiv.service_refresh_tokens": []any{"t1", "t2"},
+		"pixiv.public_read_enabled":    true,
+	}); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if _, err := mgr.Patch(map[string]any{"pixiv.service_refresh_tokens": "not-an-array"}); err == nil {
+		t.Error("expected PatchError for string-typed service_refresh_tokens")
+	}
+	// Mask round-trip (frontend redaction) must not clear the stored list.
+	if _, err := mgr.Patch(map[string]any{"pixiv.service_refresh_tokens": SensitiveMask}); err != nil {
+		t.Fatalf("mask Patch: %v", err)
+	}
+	reloaded, err := NewManager(mgr.StorePath())
+	if err != nil {
+		t.Fatalf("NewManager after patch: %v", err)
+	}
+	got := reloaded.Config().Pixiv.ServiceRefreshTokens
+	if len(got) != 2 || got[0] != "t1" || got[1] != "t2" {
+		t.Errorf("reloaded ServiceRefreshTokens = %v, want [t1 t2]", got)
+	}
+	if !reloaded.Config().Pixiv.PublicReadEnabled {
+		t.Error("reloaded PublicReadEnabled = false, want true")
+	}
 }

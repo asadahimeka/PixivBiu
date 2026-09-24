@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -102,6 +103,25 @@ func newApp(root, cacheRoot, settingsPath string, openFlag *bool, openFlagSet bo
 			}
 			if u.Host == "" {
 				return fmt.Errorf("pixiv.proxy: missing scheme://host (got %q)", c.Pixiv.Proxy)
+			}
+			return nil
+		}),
+		config.WithValidator(func(c *config.Config) error {
+			// Public anonymous reads need at least one pool token; enabling the
+			// toggle with an empty pool would 401 every guest request with no
+			// visible cause. Blank entries would poison the rotation the same
+			// way. Catches the misconfig at PATCH/startup, not per request.
+			for i, tok := range c.Pixiv.ServiceRefreshTokens {
+				if strings.TrimSpace(tok) == "" {
+					return &config.PatchError{Errors: map[string]string{
+						fmt.Sprintf("pixiv.service_refresh_tokens[%d]", i): "empty refresh token",
+					}}
+				}
+			}
+			if c.Pixiv.PublicReadEnabled && len(c.Pixiv.ServiceRefreshTokens) == 0 {
+				return &config.PatchError{Errors: map[string]string{
+					"pixiv.public_read_enabled": "requires at least one pixiv.service_refresh_tokens entry",
+				}}
 			}
 			return nil
 		}),

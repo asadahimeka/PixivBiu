@@ -1,13 +1,19 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { MouseEvent } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/features/auth";
+import { downloadIllustViaBrowser } from "@/features/downloads/browser-download";
+import type { Illust } from "@/features/illusts/api";
 import { useIllustDownload } from "@/features/illusts/use-illust-download";
 import { useMessages } from "@/i18n";
 import { CheckIcon, DownloadIcon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 
 type IllustDownloadButtonProps = {
-    illustId: number;
+    // Full work (not just the id): anonymous sessions save through the
+    // browser via downloadIllustViaBrowser and need the page URLs; operator
+    // sessions still enqueue a server job from the id alone.
+    illust: Illust;
     className?: string;
 };
 
@@ -17,35 +23,80 @@ const RING_CIRCUM = 2 * Math.PI * RING_RADIUS;
 // classic Material-style indeterminate spinner.
 const INDETERMINATE_OFFSET = RING_CIRCUM * 0.75;
 
-function IllustDownloadButton({ illustId, className }: IllustDownloadButtonProps) {
+function IllustDownloadButton({ illust, className }: IllustDownloadButtonProps) {
     const m = useMessages();
-    const { downloading, justSent, errorTitle, percent, indeterminate, trigger } = useIllustDownload(illustId);
+    const { status } = useAuth();
+    const authenticated = !!status?.authenticated;
+    const { downloading, justSent, errorTitle, percent, indeterminate, trigger } = useIllustDownload(illust.id);
+    const [guestBusy, setGuestBusy] = useState(false);
+    const [guestDone, setGuestDone] = useState(false);
+    const guestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(
+        () => () => {
+            if (guestTimerRef.current) clearTimeout(guestTimerRef.current);
+        },
+        [],
+    );
+
+    // Card download is a login-state control: hidden for public-mode guests
+    // (its server path needs the operator session, and the anonymous path has
+    // no login surface behind it either). The viewer's action-cell download
+    // is deliberately NOT gated — that's the Task 4 anonymous browser-save
+    // path. Local mode keeps this button for guests, pixel-identical.
+    if (status?.public_read && !status?.authenticated) return null;
+
+    const guestDownload = async () => {
+        if (guestBusy) return;
+        setGuestBusy(true);
+        setGuestDone(false);
+        try {
+            // Same outcome gating as the viewer's DownloadCell: the check
+            // only flashes when every page actually saved.
+            const result = await downloadIllustViaBrowser(illust);
+            if (result === "saved") {
+                setGuestDone(true);
+                if (guestTimerRef.current) clearTimeout(guestTimerRef.current);
+                guestTimerRef.current = setTimeout(() => setGuestDone(false), 1400);
+            }
+        } finally {
+            setGuestBusy(false);
+        }
+    };
 
     const onClick = (e: MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
+        // Anonymous: browser download (no POST /downloads ever leaves the tab).
+        if (!authenticated) {
+            void guestDownload();
+            return;
+        }
         trigger();
     };
 
+    const busy = downloading || guestBusy;
     const dashOffset = indeterminate ? INDETERMINATE_OFFSET : RING_CIRCUM * (1 - (percent ?? 0));
 
     const colorClasses = errorTitle
         ? "bg-destructive text-white ring-2 ring-destructive/40"
-        : downloading
+        : busy
           ? "bg-accent text-accent-foreground"
           : "bg-primary text-primary-foreground";
+
+    const showCheck = justSent || guestDone;
 
     const button = (
         <button
             type="button"
             onClick={onClick}
-            disabled={downloading}
-            aria-label={downloading ? m.downloads_btn_downloading() : m.downloads_btn_download()}
+            disabled={busy}
+            aria-label={busy ? m.downloads_btn_downloading() : m.downloads_btn_download()}
             className={cn(
                 "absolute right-3.5 bottom-3.5 flex size-10 scale-90 items-center justify-center opacity-0 shadow-md transition-all duration-300 disabled:cursor-wait group-hover:scale-100 group-hover:opacity-100",
                 colorClasses,
-                downloading || justSent ? "rounded-[20px]" : "rounded-xl",
-                (downloading || justSent) && "scale-100 opacity-100 group-hover:opacity-100",
-                !downloading && "disabled:opacity-70 group-hover:disabled:opacity-70",
+                busy || showCheck ? "rounded-[20px]" : "rounded-xl",
+                (busy || showCheck) && "scale-100 opacity-100 group-hover:opacity-100",
+                !busy && "disabled:opacity-70 group-hover:disabled:opacity-70",
                 className,
             )}
         >
@@ -86,7 +137,7 @@ function IllustDownloadButton({ illustId, className }: IllustDownloadButtonProps
                     </svg>
                 </span>
             )}
-            <HugeiconsIcon icon={justSent ? CheckIcon : DownloadIcon} size={16} strokeWidth={1.5} />
+            <HugeiconsIcon icon={showCheck ? CheckIcon : DownloadIcon} size={16} strokeWidth={1.5} />
         </button>
     );
 

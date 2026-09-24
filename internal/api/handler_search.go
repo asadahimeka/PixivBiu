@@ -19,7 +19,7 @@ import (
 const upstreamSearchPageSize = 30
 
 func (h *APIHandler) SearchIllusts(w http.ResponseWriter, r *http.Request, params SearchIllustsParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -31,7 +31,7 @@ func (h *APIHandler) SearchIllusts(w http.ResponseWriter, r *http.Request, param
 		h.searchIllustsRanked(w, r, params, sort)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.SearchIllustrations, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.SearchIllustrations, error) {
 		return c.SearchIllust(r.Context(), searchIllustParams(params, pixivgo.Sort(derefEnum(params.Sort)), i64OptToIntOpt(params.Offset)))
 	})
 	if err != nil {
@@ -73,6 +73,16 @@ func (h *APIHandler) searchIllustsRanked(w http.ResponseWriter, r *http.Request,
 		base = int(*params.Offset)
 	}
 
+	// Resolve the upstream identity ONCE for the whole window: round-robining
+	// pool.Next() per page would burn one rotation slot per fan-out goroutine
+	// and mix identities inside one ranked result set. The gate above already
+	// passed, but the pool can drain between gate and now — fail closed then.
+	refresh, ok := h.svc.ReadRefreshToken(r)
+	if !ok {
+		WriteError(w, r, pixiv.ErrNotAuthenticated)
+		return
+	}
+
 	// Fan the window out into pre-sized slots so each goroutine writes its own index
 	// without locking; the order is preserved for the in-order merge below.
 	results := make([]*pixivgo.SearchIllustrations, pages)
@@ -82,7 +92,7 @@ func (h *APIHandler) searchIllustsRanked(w http.ResponseWriter, r *http.Request,
 		off := base + i*upstreamSearchPageSize
 		g.Go(func() error {
 			p := searchIllustParams(params, pixivgo.SortDateDesc, &off)
-			resp, err := pixiv.Call(ctx, h.svc, func(c *pixivgo.Client) (*pixivgo.SearchIllustrations, error) {
+			resp, err := pixiv.CallRefresh(ctx, h.svc, refresh, func(c *pixivgo.Client) (*pixivgo.SearchIllustrations, error) {
 				return c.SearchIllust(ctx, p)
 			})
 			if err != nil {
@@ -135,11 +145,11 @@ func (h *APIHandler) searchIllustsRanked(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *APIHandler) SearchUsers(w http.ResponseWriter, r *http.Request, params SearchUsersParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.UserListResponse, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.UserListResponse, error) {
 		return c.SearchUser(r.Context(), pixivgo.SearchUserParams{
 			Word:     params.Word,
 			Sort:     pixivgo.Sort(userSearchSort(params.Sort)),

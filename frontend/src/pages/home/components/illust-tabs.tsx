@@ -5,6 +5,7 @@ import LeapyLoading from "@/components/series-leapy/leapy-loading";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilterPanel } from "@/features/activity-bar";
+import { useAuth } from "@/features/auth";
 import { useIllustSelection } from "@/features/downloads";
 import { FilteredEmpty, useFilteredIllusts } from "@/features/filter";
 import {
@@ -20,6 +21,7 @@ import IllustGrid, { IllustGridSkeleton } from "@/features/search/components/ill
 import { SearchError } from "@/features/search/components/search-states";
 import { useMessages } from "@/i18n";
 import { RefreshIcon } from "@/lib/icons";
+import { authQueryScope } from "@/lib/query/auth-scope";
 import { cn } from "@/lib/utils";
 
 export type TabId = "for-you" | "week" | "follow";
@@ -64,6 +66,12 @@ type HomeIllustTabsProps = {
 function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
     const m = useMessages();
     const queryClient = useQueryClient();
+    const { status } = useAuth();
+    // The following feed is identity-scoped: anonymous sessions would receive
+    // the pool account's follows, so guests get a sign-in hint instead (the
+    // query stays disabled — no misleading fetch of someone else's data).
+    const authenticated = !!status?.authenticated;
+    const scope = authQueryScope(authenticated);
     const { selected, toggle, replaceSelection, clearSelection } = useIllustSelection();
     const [forYou, setForYou] = useState<ForYouParams>(DEFAULT_FOR_YOU);
     const [follow, setFollow] = useState<FollowParams>(DEFAULT_FOLLOW);
@@ -74,12 +82,15 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
     // grid on screen while a same-tab filter change reloads (matching the old refresh-over-
     // grid). A tab switch reads a different query, so each tab shows its own cache/skeleton
     // with no cross-tab bleed. TanStack handles dedup/races, replacing the old version refs.
-    const forYouOptions = recommendedInfiniteQueryOptions({
-        type: forYou.type,
-        includeRankingIllusts: forYou.includeRankingIllusts,
-    });
+    const forYouOptions = recommendedInfiniteQueryOptions(
+        {
+            type: forYou.type,
+            includeRankingIllusts: forYou.includeRankingIllusts,
+        },
+        scope,
+    );
     const weekOptions = weekRankingInfiniteQueryOptions();
-    const followOptions = followingInfiniteQueryOptions({ restrict: follow.restrict });
+    const followOptions = followingInfiniteQueryOptions({ restrict: follow.restrict }, scope);
 
     const forYouQuery = useInfiniteQuery({
         ...forYouOptions,
@@ -93,7 +104,7 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
     });
     const followQuery = useInfiniteQuery({
         ...followOptions,
-        enabled: activeTab === "follow",
+        enabled: activeTab === "follow" && authenticated,
         placeholderData: keepPreviousData,
     });
 
@@ -122,6 +133,7 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
             );
         }
         if (activeTab === "follow") {
+            if (!authenticated) return null; // guests see the sign-in hint, not filters
             return (
                 <FollowingSpecialFilters
                     restrict={follow.restrict}
@@ -130,7 +142,7 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
             );
         }
         return null;
-    }, [activeTab, forYou.type, forYou.includeRankingIllusts, follow.restrict]);
+    }, [activeTab, authenticated, forYou.type, forYou.includeRankingIllusts, follow.restrict]);
 
     const specialFiltersActiveCount =
         activeTab === "for-you" ? countForYouActive(forYou) : activeTab === "follow" ? countFollowActive(follow) : 0;
@@ -203,7 +215,14 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
                 </div>
             </div>
 
-            {query.isPending ? (
+            {activeTab === "follow" && !authenticated ? (
+                // Guest on the follow tab: the feed would be the pool
+                // account's follows — show a sign-in hint instead.
+                <div className="flex flex-col items-center gap-2 py-20 text-center">
+                    <div className="font-medium text-foreground text-lg">{m.user_followed_authors_signin()}</div>
+                    <div className="text-muted-foreground text-sm">{m.user_followed_authors_signin_hint()}</div>
+                </div>
+            ) : query.isPending ? (
                 <IllustGridSkeleton />
             ) : query.isError && illusts.length === 0 ? (
                 // Only take over the page when the FIRST load failed (nothing to show). A

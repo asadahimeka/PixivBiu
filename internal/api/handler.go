@@ -50,6 +50,9 @@ type APIHandler struct {
 }
 
 func NewHandler(svc *pixiv.Service, hub *inbox.Hub, dl *download.Manager, pkce *auth.Store, heartbeat *atomic.Int64, searchSamplePages *atomic.Int64, searchSampleConcurrency *atomic.Int64, cfgMgr *config.Manager, restart func(), upd *update.Service, img *imgcache.Proxy, version string) *APIHandler {
+	// The anonymous-read gate reads Service directly (PoolHasTokens /
+	// PublicReadEnabled) — no local pool mirror: Evict/ReloadPool stay
+	// visible to the gate live, seeded and hot-reloaded inside pixiv.Service.
 	return &APIHandler{svc: svc, hub: hub, dl: dl, pkce: pkce, heartbeat: heartbeat, searchSamplePages: searchSamplePages, searchSampleConcurrency: searchSampleConcurrency, cfgMgr: cfgMgr, restart: restart, upd: upd, version: version, img: img}
 }
 
@@ -111,6 +114,7 @@ var sentinelErrors = []struct {
 	{download.ErrAlreadyTerminal, ErrorCodeConflict, http.StatusConflict},
 	{download.ErrStillRunning, ErrorCodeConflict, http.StatusConflict},
 	{ErrMissingAppHeader, ErrorCodeForbidden, http.StatusForbidden},
+	{ErrRateLimited, ErrorCodeRateLimited, http.StatusTooManyRequests},
 	{imgcache.ErrInvalidURL, ErrorCodeBadRequest, http.StatusBadRequest},
 }
 
@@ -237,12 +241,62 @@ func classify(err error) (int, Error) {
 	}
 }
 
-// requireAuth short-circuits when the service has no access token.
-func (h *APIHandler) requireAuth() error {
-	if !h.svc.Authenticated() {
+// requirePublicRead gates read endpoints. The mode switch is
+// pixiv.public_read_enabled, read live off the Service, and every branch must
+// stay in lockstep with Service.ReadRefreshToken (the token the upstream call
+// will actually use) so the gate can never pass a request the call layer then
+// fails — or worse, the reverse:
+//
+//   - User-token requests (mechanism deferred, always false today): the
+//     operator session, only while authenticated.
+//   - Public mode: PoolHasTokens only — fail-closed even if the operator is
+//     logged in, because public mode issues upstream tokens from the pool
+//     exclusively and never falls back to the operator session.
+//   - Local mode (public reads off): the operator session, only while
+//     authenticated — the original single-user behavior, trusted at the
+//     loopback network boundary.
+//
+// Never probes via Pool.Next for availability: that would steal a rotation
+// slot (Service.PoolHasTokens exists for this). Mutations must not use this
+// gate — they go through requireUserWrite. Nil-safe so a bare &APIHandler{}
+// fails closed.
+func (h *APIHandler) requirePublicRead(r *http.Request) error {
+	if h.svc == nil {
+		return pixiv.ErrNotAuthenticated
+	}
+	if h.svc.HasUserToken(r) {
+		if h.svc.Authenticated() {
+			return nil
+		}
+		return pixiv.ErrNotAuthenticated
+	}
+	if h.svc.PublicReadEnabled() {
+		if h.svc.PoolHasTokens() {
+			return nil
+		}
+		return pixiv.ErrNotAuthenticated
+	}
+	if h.svc.Authenticated() {
+		return nil
+	}
+	return pixiv.ErrNotAuthenticated
+}
+
+// requireUserWrite is the operator-session gate for mutations (bookmark,
+// follow, server-side download jobs, config patches, system actions).
+// Anonymous callers may read via requirePublicRead but never write.
+func (h *APIHandler) requireUserWrite() error {
+	if h.svc == nil || !h.svc.Authenticated() {
 		return pixiv.ErrNotAuthenticated
 	}
 	return nil
+}
+
+// requireAuth is the original session gate, kept for call-sites outside this
+// change's file scope (config / system handlers). Same behavior as
+// requireUserWrite.
+func (h *APIHandler) requireAuth() error {
+	return h.requireUserWrite()
 }
 
 // i64OptToIntOpt converts an optional int64 (our OpenAPI pagination cursor)

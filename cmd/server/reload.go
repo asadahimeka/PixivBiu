@@ -25,6 +25,15 @@ func (a *app) registerReloadHooks() {
 			a.logger.Error("pixiv config reload failed", slog.Any("error", err))
 		}
 	})
+	// Anonymous service-token pool (pixiv.service_refresh_tokens) and the
+	// public-read switch (pixiv.public_read_enabled) are hot: both only flip
+	// in-memory state inside pixiv.Service, so this hook never blocks and
+	// never re-enters Patch/Reset. SetPublicRead feeds the live read gate
+	// (requirePublicRead / ReadRefreshToken) — no restart needed.
+	a.cfgMgr.OnReload(func(n *config.Config) {
+		a.svc.ReloadPool(n.Pixiv.ServiceRefreshTokens)
+		a.svc.SetPublicRead(n.Pixiv.PublicReadEnabled)
+	})
 	a.cfgMgr.OnReload(func(n *config.Config) {
 		if err := a.dlMgr.Reload(n.Download, n.Pixiv.Proxy); err != nil {
 			a.logger.Error("download config reload failed", slog.Any("error", err))

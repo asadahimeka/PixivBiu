@@ -1,7 +1,9 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/features/auth";
 import { useDownloadMutations } from "@/features/downloads";
 import { GeneralFiltersSection, useGeneralFilters } from "@/features/filter";
 import { countActiveGeneralFilters } from "@/features/filter/types";
@@ -45,8 +47,19 @@ function EmptyState() {
 function FilterPanelActions({ quickAction }: { quickAction: QuickActionData }) {
     const m = useMessages();
     const { submit } = useDownloadMutations();
+    // Batch download enqueues server jobs — operator-only. Guests route to
+    // login (with the return path) instead of a burst of rejected POSTs.
+    const { status } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
     const [pending, setPending] = useState(false);
     const [errorTitle, setErrorTitle] = useState<string | null>(null);
+
+    // Public mode: batch download enqueues operator-only server jobs and the
+    // redirect target /login no longer exists — hide the whole action row
+    // (select-all exists only to feed the download). Local mode keeps the
+    // buttons and the Sign in bounce, pixel-identical to before.
+    if (status?.public_read && !status?.authenticated) return null;
 
     const selectedCount = quickAction.selected.size;
     const hasSelection = selectedCount > 0;
@@ -54,6 +67,13 @@ function FilterPanelActions({ quickAction }: { quickAction: QuickActionData }) {
 
     const onSubmit = async () => {
         if (pending || selectedCount === 0) return;
+        if (!status?.authenticated) {
+            // Local guest: bounce to login with the return path. Public mode
+            // never reaches here (the row is hidden) — never navigate a
+            // guest at the now-hidden /login route.
+            if (!status?.public_read) navigate("/login", { state: { from: location } });
+            return;
+        }
         setPending(true);
         setErrorTitle(null);
         const results = await Promise.all([...quickAction.selected].map((id) => submit(id)));

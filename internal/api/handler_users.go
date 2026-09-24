@@ -12,11 +12,11 @@ import (
 )
 
 func (h *APIHandler) GetUser(w http.ResponseWriter, r *http.Request, id UserIdPath, params GetUserParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.UserInfoDetailed, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.UserInfoDetailed, error) {
 		return c.UserDetail(r.Context(), pixivgo.UserDetailParams{
 			UserID: int(id),
 			Filter: pixivgo.Filter(derefEnum(params.ClientMode)),
@@ -35,11 +35,11 @@ func (h *APIHandler) GetUser(w http.ResponseWriter, r *http.Request, id UserIdPa
 }
 
 func (h *APIHandler) ListUserIllusts(w http.ResponseWriter, r *http.Request, id UserIdPath, params ListUserIllustsParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.UserIllustrations, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.UserIllustrations, error) {
 		return c.UserIllusts(r.Context(), pixivgo.UserIllustsParams{
 			UserID: int(id),
 			Type:   pixivgo.IllustType(derefEnum(params.Type)),
@@ -59,11 +59,11 @@ func (h *APIHandler) ListUserIllusts(w http.ResponseWriter, r *http.Request, id 
 }
 
 func (h *APIHandler) ListUserBookmarks(w http.ResponseWriter, r *http.Request, id UserIdPath, params ListUserBookmarksParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.UserBookmarksIllustrations, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.UserBookmarksIllustrations, error) {
 		return c.UserBookmarksIllust(r.Context(), pixivgo.UserBookmarksIllustParams{
 			UserID:        int(id),
 			Restrict:      pixivgo.Restrict(derefEnum(params.Restrict)),
@@ -83,11 +83,11 @@ func (h *APIHandler) ListUserBookmarks(w http.ResponseWriter, r *http.Request, i
 }
 
 func (h *APIHandler) ListUserFollowing(w http.ResponseWriter, r *http.Request, id UserIdPath, params ListUserFollowingParams) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requirePublicRead(r); err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	resp, err := pixiv.Call(r.Context(), h.svc, func(c *pixivgo.Client) (*pixivgo.UserFollowing, error) {
+	resp, err := pixiv.CallRequest(r.Context(), h.svc, r, func(c *pixivgo.Client) (*pixivgo.UserFollowing, error) {
 		return c.UserFollowing(r.Context(), pixivgo.UserFollowingParams{
 			UserID:   int(id),
 			Restrict: pixivgo.Restrict(derefEnum(params.Restrict)),
@@ -105,7 +105,7 @@ func (h *APIHandler) ListUserFollowing(w http.ResponseWriter, r *http.Request, i
 }
 
 func (h *APIHandler) AddFollow(w http.ResponseWriter, r *http.Request, id UserIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -131,7 +131,7 @@ func (h *APIHandler) AddFollow(w http.ResponseWriter, r *http.Request, id UserId
 }
 
 func (h *APIHandler) DeleteFollow(w http.ResponseWriter, r *http.Request, id UserIdPath) {
-	if err := h.requireAuth(); err != nil {
+	if err := h.requireUserWrite(); err != nil {
 		WriteError(w, r, err)
 		return
 	}

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Navigate, Outlet, useLocation } from "react-router";
+import { Outlet } from "react-router";
 import RootSidebar from "@/app/layouts/root-sidebar";
 import LeapyLoading from "@/components/series-leapy/leapy-loading";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -37,10 +37,11 @@ function ActivityPanelSlot() {
 
 function RootLayout() {
     const { status } = useAuth();
-    const location = useLocation();
 
     // First refresh is still in flight. Show a near-empty splash so the layout
-    // doesn't flash a half-loaded app before we know where the user belongs.
+    // doesn't flash a half-loaded app before we know where the user belongs —
+    // children mount only AFTER auth resolves, so every child can read a
+    // definite authenticated/anonymous status (no boot double-fetch race).
     if (status === null) {
         return (
             <div className="flex h-full items-center justify-center bg-background frost:bg-transparent">
@@ -54,9 +55,9 @@ function RootLayout() {
         );
     }
 
-    if (!status.authenticated) {
-        return <Navigate to="/login" replace state={{ from: location }} />;
-    }
+    // Anonymous visitors browse the shell as a public site (public_read mode);
+    // routes that need the operator session (/me, settings, mutations) do
+    // their own redirect. Nothing here gates on authentication anymore.
 
     return (
         <IllustViewerProvider>
