@@ -29,7 +29,7 @@ export type TabId = "for-you" | "week" | "follow";
 type ForYouParams = { type: IllustType | undefined; includeRankingIllusts: boolean };
 type FollowParams = { restrict: Restrict };
 
-const TAB_IDS: ReadonlyArray<TabId> = ["for-you", "week", "follow"];
+const TAB_IDS: ReadonlyArray<TabId> = ["week", "for-you", "follow"];
 
 const DEFAULT_FOR_YOU: ForYouParams = { type: undefined, includeRankingIllusts: true };
 const DEFAULT_FOLLOW: FollowParams = { restrict: "public" };

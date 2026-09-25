@@ -9,7 +9,7 @@ import { useGreeting } from "./use-greeting";
 function Home() {
     const greeting = useGreeting();
     const { status } = useAuth();
-    const [activeTab, setActiveTab] = useState<TabId>("for-you");
+    const [activeTab, setActiveTab] = useState<TabId>("week");
     // Public mode hides the RecentDownloads block (an operator-only surface);
     // the section then drops its two-column grid so the FollowedAuthors panel
     // doesn't sit beside an empty column.
