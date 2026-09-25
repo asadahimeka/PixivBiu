@@ -163,6 +163,18 @@ func newApp(root, cacheRoot, settingsPath string, openFlag *bool, openFlagSet bo
 	}
 	a.svc = svc
 
+	// Public mode closes the operator surface regardless of session state, but
+	// a persisted session still means the state file carries credentials a
+	// public deployment should not hold: the refresh loop keeps it alive and a
+	// later switch back to local mode would silently re-admit it. Say so once
+	// at boot so the operator can move the file away deliberately.
+	if a.cfg.Pixiv.PublicReadEnabled && svc.Authenticated() {
+		logger.Warn("public-site mode ignores the persisted operator session; operator endpoints stay closed",
+			slog.String("state_file", a.stateFile),
+			slog.String("hint", "remove or move away the state file for a purely anonymous deployment"),
+		)
+	}
+
 	a.hub = inbox.NewHub(a.cfg.Inbox.BufferSize)
 
 	a.storeFile = runtimepath.Anchor(root, a.cfg.Download.StoreFile)

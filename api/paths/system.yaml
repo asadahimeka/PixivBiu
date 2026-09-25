@@ -5,6 +5,9 @@ version:
     description: |
       Returns the version the running process was built with (the same value
       shown in the boot banner), plus the Go runtime and target OS/arch.
+
+      Answers `404 not_found` while public-site mode is on: build and
+      version details are an operator surface, not a public one.
     tags: [system]
     responses:
       '200':
@@ -12,6 +15,11 @@ version:
         content:
           application/json:
             schema: { $ref: '../openapi.yaml#/components/schemas/SystemVersion' }
+      '404':
+        description: Public-site mode is enabled; the system surfaces are closed.
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/Error' }
 
 update:
   get:
@@ -21,6 +29,9 @@ update:
       Returns the result of the most recent update check without contacting
       GitHub. `is_dev` is true for local/dev builds, where updates are never
       offered. Use `POST /system/update/check` to force a fresh check.
+
+      Answers `404 not_found` while public-site mode is on: update status is
+      an operator surface, not a public one.
     tags: [system]
     responses:
       '200':
@@ -28,6 +39,11 @@ update:
         content:
           application/json:
             schema: { $ref: '../openapi.yaml#/components/schemas/UpdateStatus' }
+      '404':
+        description: Public-site mode is enabled; the system surfaces are closed.
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/Error' }
 
 updateCheck:
   post:

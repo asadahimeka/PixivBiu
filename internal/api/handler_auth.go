@@ -15,26 +15,28 @@ import (
 	"github.com/txperl/PixivBiu/internal/sysproxy"
 )
 
-// ErrAuthSurfaceClosed signals that a user-login operation was attempted
-// while the public-site mode is on: the public deployment is purely
-// anonymous by design, so there is no operator session to create or manage.
-// It maps through classify's sentinel table to the existing
-// ErrorCodeNotFound (404, kind=app, empty message) — reusing that envelope is
-// correct because this is "the endpoint is unavailable in this mode", and
-// the not_found envelope is generic by design: the client localizes by code
-// and never needs a bespoke wire code (no spec change).
-var ErrAuthSurfaceClosed = errors.New("auth surface closed in public mode")
+// ErrPublicModeClosed signals an operator-only surface was attempted while
+// the public-site mode is on: the public deployment is purely anonymous by
+// design, so there is no operator session to create or manage — and no
+// operator surface to discover. It covers the user-login surface (login,
+// logout, OAuth, onboarding probes), the dev docs, and the system
+// version/update status endpoints. It maps through classify's sentinel table
+// to the existing ErrorCodeNotFound (404, kind=app, empty message) — reusing
+// that envelope is correct because this is "the endpoint is unavailable in
+// this mode", and the not_found envelope is generic by design: the client
+// localizes by code and never needs a bespoke wire code (no spec change).
+var ErrPublicModeClosed = errors.New("surface closed in public-site mode")
 
-// Register ErrAuthSurfaceClosed in classify's sentinel table. This lives in
+// Register ErrPublicModeClosed in classify's sentinel table. This lives in
 // an init here (rather than beside the other entries in handler.go) because
-// this change's file scope is limited to handler_auth.go; init runs after
+// the auth surface was this sentinel's first consumer; init runs after
 // all package-level vars, so sentinelErrors is already populated.
 func init() {
 	sentinelErrors = append(sentinelErrors, struct {
 		err    error
 		code   ErrorCode
 		status int
-	}{ErrAuthSurfaceClosed, ErrorCodeNotFound, http.StatusNotFound})
+	}{ErrPublicModeClosed, ErrorCodeNotFound, http.StatusNotFound})
 }
 
 // publicReadEnabled reads the live public_read_enabled flag off the Service —
@@ -52,7 +54,7 @@ func (h *APIHandler) publicReadEnabled() bool {
 // read-only mode signal. Errors flow only through WriteError/classify.
 func (h *APIHandler) requireAuthSurface(w http.ResponseWriter, r *http.Request) bool {
 	if h.publicReadEnabled() {
-		WriteError(w, r, ErrAuthSurfaceClosed) // sentinel → 404 not_found envelope
+		WriteError(w, r, ErrPublicModeClosed) // sentinel → 404 not_found envelope
 		return false
 	}
 	return true
@@ -91,6 +93,17 @@ func (h *APIHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIHandler) GetAuthStatus(w http.ResponseWriter, r *http.Request) {
+	// Public mode is anonymous for every caller: the operator session (if a
+	// state.json survived a local-mode run or a desktop migration) must never
+	// reach the open endpoint, neither as `authenticated` — it would flip the
+	// frontend's login-affordance gates for guests — nor as identity fields.
+	// The session itself stays on disk untouched: flipping back to local mode
+	// restores it after a restart.
+	if h.publicReadEnabled() {
+		v := true
+		writeJSON(w, http.StatusOK, AuthStatus{Authenticated: false, PublicRead: &v})
+		return
+	}
 	tok, sessionExpired := h.svc.AuthSnapshot()
 	writeJSON(w, http.StatusOK, makeAuthStatus(tok, sessionExpired, h.publicReadEnabled()))
 }

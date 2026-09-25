@@ -48,8 +48,14 @@ func requireAppRequest(r *http.Request) error {
 }
 
 // GetSystemVersion reports the running binary's version and build target.
-// Open (no auth) — it's the same value already printed in the boot banner.
+// Open (no auth) in local mode — it's the same value already printed in the
+// boot banner. Public-site mode closes it: version details are an operator
+// surface, and an anonymous instance should not advertise its build.
 func (h *APIHandler) GetSystemVersion(w http.ResponseWriter, r *http.Request) {
+	if h.publicReadEnabled() {
+		WriteError(w, r, ErrPublicModeClosed) // sentinel → 404 not_found envelope
+		return
+	}
 	writeJSON(w, http.StatusOK, SystemVersion{
 		Version:   h.version,
 		GoVersion: runtime.Version(),
@@ -59,8 +65,13 @@ func (h *APIHandler) GetSystemVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetUpdateStatus returns the cached update-check result without hitting the
-// network. Open (no auth) so the About panel can show the version freely.
+// network. Open (no auth) in local mode so the About panel can show the
+// version freely; closed by the same public-site rule as GetSystemVersion.
 func (h *APIHandler) GetUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	if h.publicReadEnabled() {
+		WriteError(w, r, ErrPublicModeClosed) // sentinel → 404 not_found envelope
+		return
+	}
 	writeJSON(w, http.StatusOK, updateStatusToWire(h.upd.Status()))
 }
 

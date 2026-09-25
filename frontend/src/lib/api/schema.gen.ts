@@ -635,6 +635,9 @@ export interface paths {
          * @description Returns the result of the most recent update check without contacting
          *     GitHub. `is_dev` is true for local/dev builds, where updates are never
          *     offered. Use `POST /system/update/check` to force a fresh check.
+         *
+         *     Answers `404 not_found` while public-site mode is on: update status is
+         *     an operator surface, not a public one.
          */
         get: operations["GetUpdateStatus"];
         put?: never;
@@ -710,6 +713,9 @@ export interface paths {
          * Get the running binary's version and build info
          * @description Returns the version the running process was built with (the same value
          *     shown in the boot banner), plus the Go runtime and target OS/arch.
+         *
+         *     Answers `404 not_found` while public-site mode is on: build and
+         *     version details are an operator surface, not a public one.
          */
         get: operations["GetSystemVersion"];
         put?: never;
@@ -819,7 +825,7 @@ export interface components {
             authenticated: boolean;
             /** Format: date-time */
             expires_at?: string | null;
-            /** @description True while the server runs in public-site mode (`pixiv.public_read_enabled` with a non-empty service token pool). User-login endpoints are closed then; the frontend hides all login affordances when set. False or absent in local single-operator mode. */
+            /** @description True while the server runs in public-site mode (`pixiv.public_read_enabled` with a non-empty service token pool). User-login endpoints are closed then, and this status is anonymous for every caller: `authenticated` is always false and the identity fields (`user_id`, `user_name`, `expires_at`, `session_expired`) are never reported, even when a session file exists on disk. False or absent in local single-operator mode. */
             public_read?: boolean;
             /** @description True when the previous session was cleared because Pixiv rejected the refresh token (invalid_grant) — distinct from a first-run "never logged in" state. The login page surfaces a "session expired, please sign in again" hint when set. Only meaningful while unauthenticated; false or absent otherwise. */
             session_expired?: boolean | null;
@@ -2434,6 +2440,15 @@ export interface operations {
                     "application/json": components["schemas"]["UpdateStatus"];
                 };
             };
+            /** @description Public-site mode is enabled; the system surfaces are closed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     ApplyUpdate: {
@@ -2500,6 +2515,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemVersion"];
+                };
+            };
+            /** @description Public-site mode is enabled; the system surfaces are closed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

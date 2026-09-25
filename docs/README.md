@@ -9,6 +9,7 @@ PixivBiu's documentation describes the v3 code in this checkout. For an installe
 | Install and run the app | [中文](../README.md) · [English](../README_EN.md) · [日本語](../README_JA.md) |
 | Configure paths, proxy, language, or downloads | [Configuration reference](CONFIGURATION.md) |
 | Deploy, update, or back up a container | [Docker deployment](DOCKER.md) |
+| Preset Pixiv refresh tokens or run a public, anonymous instance | [Public-site deployment](PUBLIC_SITE.md) |
 | Understand desktop storage and window behavior | [Desktop guide](../desktop/README.md) |
 
 ## Develop

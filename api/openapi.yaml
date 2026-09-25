@@ -513,9 +513,11 @@ components:
           description: >-
             True while the server runs in public-site mode
             (`pixiv.public_read_enabled` with a non-empty service token
-            pool). User-login endpoints are closed then; the frontend
-            hides all login affordances when set. False or absent in
-            local single-operator mode.
+            pool). User-login endpoints are closed then, and this status is
+            anonymous for every caller: `authenticated` is always false and
+            the identity fields (`user_id`, `user_name`, `expires_at`,
+            `session_expired`) are never reported, even when a session file
+            exists on disk. False or absent in local single-operator mode.
 
     ConnectivityRequest:
       type: object

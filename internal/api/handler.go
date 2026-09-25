@@ -285,8 +285,17 @@ func (h *APIHandler) requirePublicRead(r *http.Request) error {
 // requireUserWrite is the operator-session gate for mutations (bookmark,
 // follow, server-side download jobs, config patches, system actions).
 // Anonymous callers may read via requirePublicRead but never write.
+//
+// Public mode fails closed before the session check: the write surface is
+// closed with no admin entry by design, so even a session loaded from a
+// leftover or migrated state.json must not re-open mutations to whoever can
+// reach the network — the gate answers on the mode alone, never on session
+// state.
 func (h *APIHandler) requireUserWrite() error {
-	if h.svc == nil || !h.svc.Authenticated() {
+	if h.svc == nil {
+		return pixiv.ErrNotAuthenticated
+	}
+	if h.svc.PublicReadEnabled() || !h.svc.Authenticated() {
 		return pixiv.ErrNotAuthenticated
 	}
 	return nil
@@ -297,6 +306,13 @@ func (h *APIHandler) requireUserWrite() error {
 // requireUserWrite.
 func (h *APIHandler) requireAuth() error {
 	return h.requireUserWrite()
+}
+
+// PublicReadMode reports the live public_read_enabled flag for surfaces
+// outside the generated routes (the dev docs and openapi.json registered by
+// the server package). Nil-safe: a bare handler reads as local mode.
+func (h *APIHandler) PublicReadMode() bool {
+	return h.publicReadEnabled()
 }
 
 // i64OptToIntOpt converts an optional int64 (our OpenAPI pagination cursor)

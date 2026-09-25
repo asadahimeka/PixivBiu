@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/features/auth";
 import { type DesktopUpdateStatus, desktopBridge, isDesktop } from "@/lib/desktop";
 import { pollUntil } from "@/lib/poll";
 import {
@@ -72,6 +73,15 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     const [checking, setChecking] = useState(false);
     const [applying, setApplying] = useState(false);
 
+    // Public-site mode closes /system/version and /system/update server-side
+    // (they are operator surfaces). Wait for the auth status before the first
+    // fetch, and once public mode is known, skip ALL web fetching and keep the
+    // context empty: the sidebar dot and the About panel are settings/login
+    // surfaces public mode hides, and polling would only hammer 404s. The
+    // desktop path is unaffected — its status comes from the bridge.
+    const { status: authStatus } = useAuth();
+    const publicMode = authStatus?.public_read === true;
+
     // Adopt a status only when it actually differs, so an identical poll result
     // doesn't churn the context value and re-render every consumer (the sidebar
     // dot, the About panel). Mirrors useConfig's applyView.
@@ -84,11 +94,19 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         if (data) adoptStatus(data);
     }, [adoptStatus]);
 
-    // Initial load: build info always (open, no auth). On the web we also adopt
-    // the backend's cached update status; in desktop the bridge drives status,
-    // so we only need build info here.
+    // Initial load: build info always (open, no auth in local mode). On the
+    // web we also adopt the backend's cached update status; in desktop the
+    // bridge drives status, so we only need build info here. Waits for the
+    // auth status so a public-mode guest never fires the (closed) endpoints.
     useEffect(() => {
         let alive = true;
+        if (publicMode) {
+            setStatus(null);
+            setSystemVersion(null);
+            setLoading(false);
+            return;
+        }
+        if (!desktop && authStatus === null) return;
         void (async () => {
             const ver = await getSystemVersion();
             if (alive && ver.data) setSystemVersion(ver.data);
@@ -101,29 +119,29 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         return () => {
             alive = false;
         };
-    }, [adoptStatus, desktop]);
+    }, [adoptStatus, desktop, authStatus, publicMode]);
 
     // Slow steady-state refresh (web only — desktop status is push-based).
     useEffect(() => {
-        if (desktop) return;
+        if (desktop || publicMode) return;
         const id = setInterval(() => void refresh(), SLOW_POLL_INTERVAL_MS);
         return () => clearInterval(id);
-    }, [refresh, desktop]);
+    }, [refresh, desktop, publicMode]);
 
     // Fast catch-up until the backend's first check lands. Check() stamps
-    // last_checked even when it fails, so this stops as soon as the backend has
-    // checked once; the attempt cap is the backstop for the disabled case where
-    // last_checked never appears.
+    // last_checked even when it fails, so this stops as soon as the backend
+    // has checked once; the attempt cap is the backstop for the disabled case
+    // where last_checked never appears. Public mode never polls at all.
     const checkedOnce = !!status?.last_checked;
     useEffect(() => {
-        if (desktop || checkedOnce) return;
+        if (desktop || checkedOnce || publicMode) return;
         let n = 0;
         const id = setInterval(() => {
             void refresh();
             if (++n >= FAST_POLL_MAX_ATTEMPTS) clearInterval(id);
         }, FAST_POLL_INTERVAL_MS);
         return () => clearInterval(id);
-    }, [refresh, checkedOnce, desktop]);
+    }, [refresh, checkedOnce, desktop, publicMode]);
 
     // apply / the desktop subscription read the current version at call time;
     // keep it in a ref so the callbacks stay stable and never churn the context.

@@ -97,6 +97,36 @@ func TestGetAuthStatusOpenInPublicMode(t *testing.T) {
 	}
 }
 
+// TestGetAuthStatusAnonymizesOperatorSession pins the identity-leak fix: in
+// public mode the open status endpoint must not reflect a session loaded
+// from state.json — neither as `authenticated` (it would flip the frontend's
+// login-affordance gates for guests) nor as identity fields. The session on
+// disk is untouched: flipping back to local mode restores it.
+func TestGetAuthStatusAnonymizesOperatorSession(t *testing.T) {
+	h := NewHandler(publicAuthedService(t), nil, nil, auth.NewStore(), nil, nil, nil, nil, nil, nil, nil, "")
+
+	rec := httptest.NewRecorder()
+	h.GetAuthStatus(rec, httptest.NewRequest(http.MethodGet, "/auth/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var st AuthStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if st.Authenticated {
+		t.Error("Authenticated = true, want false in public mode despite an operator session")
+	}
+	if st.PublicRead == nil || !*st.PublicRead {
+		t.Errorf("PublicRead = %v, want non-nil true", st.PublicRead)
+	}
+	if st.UserId != nil || st.UserName != nil || st.ExpiresAt != nil || st.SessionExpired != nil {
+		t.Errorf("identity fields must be absent, got user_id=%v user_name=%v expires_at=%v session_expired=%v",
+			st.UserId, st.UserName, st.ExpiresAt, st.SessionExpired)
+	}
+}
+
 // TestAuthStatusReportsPublicRead pins the Task 3 signal: the open status
 // endpoint reports the live public-site flag, so the frontend can hide login
 // affordances without holding an authenticated session.

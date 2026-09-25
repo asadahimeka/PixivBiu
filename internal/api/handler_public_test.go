@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -49,6 +50,17 @@ func TestRequirePublicReadAnonymous(t *testing.T) {
 	if err := (&APIHandler{svc: svc}).requirePublicRead(gateReq()); err == nil {
 		t.Fatal("want error in local mode without a session")
 	}
+}
+
+// publicAuthedService is the configuration the anonymous-write hole used to
+// hide in: public mode switched on while a leftover/migrated state.json still
+// carries an operator session.
+func publicAuthedService(t *testing.T) *pixiv.Service {
+	t.Helper()
+	svc := authedService(t)
+	svc.SetPublicRead(true)
+	svc.ReloadPool([]string{"tok"})
+	return svc
 }
 
 func TestRequirePublicRead_Gates(t *testing.T) {
@@ -103,9 +115,64 @@ func TestRequireUserWrite_Gates(t *testing.T) {
 	if err := (&APIHandler{svc: authed}).requireUserWrite(); err != nil {
 		t.Errorf("want nil for authenticated write, got %v", err)
 	}
+	// Public mode fails closed on the mode alone: an operator session left in
+	// state.json must not re-open writes — the gate must never consult the
+	// session in public mode.
+	if err := (&APIHandler{svc: publicAuthedService(t)}).requireUserWrite(); err == nil {
+		t.Error("want error for write in public mode despite an authenticated operator session")
+	}
 	// requireAuth keeps the same behavior for config/system call-sites.
 	if err := (&APIHandler{svc: unauthed}).requireAuth(); err == nil {
 		t.Error("want requireAuth to keep rejecting unauthenticated")
+	}
+	if err := (&APIHandler{svc: publicAuthedService(t)}).requireAuth(); err == nil {
+		t.Error("want requireAuth to reject writes in public mode despite a session")
+	}
+}
+
+// The system info surfaces are open only in local mode: public-site mode
+// answers the 404 not_found envelope (upd may be nil — reaching it would
+// panic, so a 404 here proves the gate fires first).
+func TestSystemSurfacesClosedInPublicMode(t *testing.T) {
+	h := NewHandler(publicService(t), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+
+	ops := []struct {
+		name string
+		call func(http.ResponseWriter, *http.Request)
+	}{
+		{"version", h.GetSystemVersion},
+		{"update", h.GetUpdateStatus},
+	}
+	for _, op := range ops {
+		t.Run(op.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			op.call(rec, httptest.NewRequest(http.MethodGet, "/system/"+op.name, nil))
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404", rec.Code)
+			}
+			var env Error
+			if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+				t.Fatalf("decode envelope: %v", err)
+			}
+			if env.Code != ErrorCodeNotFound || env.Kind != ErrorKindApp {
+				t.Errorf("envelope = {code:%s kind:%s}, want {not_found app}", env.Code, env.Kind)
+			}
+		})
+	}
+}
+
+// The config read surface must not leak through a leftover operator session:
+// in public mode GET /config answers 401 even though the service is
+// authenticated (cfgMgr is nil — reaching it would panic, so a 401 here
+// proves requireAuth fires first).
+func TestGetConfig_RejectedWithLeftoverSessionInPublicMode(t *testing.T) {
+	h := NewHandler(publicAuthedService(t), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+
+	rec := httptest.NewRecorder()
+	h.GetConfig(rec, httptest.NewRequest(http.MethodGet, "/config", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }
 
