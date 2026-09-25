@@ -70,6 +70,10 @@ type Service struct {
 	// so a burst of anonymous reads costs one Auth call.
 	poolSessG singleflight.Group
 
+	// apiBase is the App API base buildClient resolved (default host, or the
+	// bypass-SNI base), shared by the raw JSON call path.
+	apiBase string
+
 	wg   sync.WaitGroup
 	stop context.CancelFunc
 }
@@ -78,7 +82,7 @@ type Service struct {
 // the network. Use Start to perform the initial Auth and kick off the refresh
 // loop. Shutdown cancels the loop and waits for it to exit.
 func NewService(cfg config.PixivConfig, logger *slog.Logger, store *state.Store) (*Service, error) {
-	client, httpc, err := buildClient(cfg)
+	client, httpc, apiBase, err := buildClient(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +98,7 @@ func NewService(cfg config.PixivConfig, logger *slog.Logger, store *state.Store)
 		store:    store,
 		client:   client,
 		httpc:    httpc,
+		apiBase:  apiBase,
 		token:    tok,
 		pool:     NewPool(cfg.ServiceRefreshTokens),
 		poolSess: make(map[string]poolSession),
@@ -295,7 +300,7 @@ func (s *Service) Reload(cfg config.PixivConfig) error {
 	cfg.BypassSNI = s.cfg.BypassSNI
 	cfg.StateFile = s.cfg.StateFile
 
-	client, httpc, err := buildClient(cfg)
+	client, httpc, apiBase, err := buildClient(cfg)
 	if err != nil {
 		return fmt.Errorf("rebuild pixiv client: %w", err)
 	}
@@ -303,6 +308,7 @@ func (s *Service) Reload(cfg config.PixivConfig) error {
 		client.SetAuth(s.token.AccessToken, s.token.RefreshToken)
 	}
 	s.client, s.httpc, s.cfg = client, httpc, cfg
+	s.apiBase = apiBase
 	return nil
 }
 
@@ -547,7 +553,7 @@ func (s *Service) ProbeReachable(ctx context.Context, proxy *string) (bool, time
 		cfg.Proxy = *proxy
 	}
 
-	_, httpc, err := buildClient(cfg)
+	_, httpc, _, err := buildClient(cfg)
 	if err != nil {
 		return false, 0, err
 	}
@@ -574,27 +580,28 @@ func (s *Service) ProbeReachable(ctx context.Context, proxy *string) (bool, time
 // applied. It does NOT authenticate. The second return is the raw
 // *http.Client backing the pixivgo client (or http.DefaultClient when neither
 // proxy nor SNI-bypass is configured) so callers can reuse the same network
-// path for OAuth flows pixivgo doesn't cover.
-func buildClient(cfg config.PixivConfig) (*pixivgo.Client, *http.Client, error) {
+// path for OAuth flows pixivgo doesn't cover. The third return is the App API
+// base the client was pointed at, for raw calls sharing the same network path.
+func buildClient(cfg config.PixivConfig) (*pixivgo.Client, *http.Client, string, error) {
 	opts := []pixivgo.Option{}
 
 	if cfg.BypassSNI {
 		hc, base, err := bypass.NewHTTPClient(context.Background())
 		if err != nil {
-			return nil, nil, fmt.Errorf("init sni bypass: %w", err)
+			return nil, nil, "", fmt.Errorf("init sni bypass: %w", err)
 		}
 		opts = append(opts, pixivgo.WithHTTPClient(hc), pixivgo.WithBaseURL(base))
-		return pixivgo.NewClient(opts...), hc, nil
+		return pixivgo.NewClient(opts...), hc, base, nil
 	}
 
 	if cfg.Proxy != "" {
 		u, err := url.Parse(cfg.Proxy)
 		if err != nil {
-			return nil, nil, fmt.Errorf("parse pixiv proxy %q: %w", cfg.Proxy, err)
+			return nil, nil, "", fmt.Errorf("parse pixiv proxy %q: %w", cfg.Proxy, err)
 		}
 		hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(u)}}
 		opts = append(opts, pixivgo.WithHTTPClient(hc))
-		return pixivgo.NewClient(opts...), hc, nil
+		return pixivgo.NewClient(opts...), hc, defaultAppAPIBase, nil
 	}
-	return pixivgo.NewClient(opts...), http.DefaultClient, nil
+	return pixivgo.NewClient(opts...), http.DefaultClient, defaultAppAPIBase, nil
 }

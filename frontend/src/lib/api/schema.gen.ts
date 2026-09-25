@@ -603,6 +603,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/search/trending-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List trending illustration tags with a sample artwork each
+         * @description Pixiv's current trending tags (the App API trending-tags-illust feed),
+         *     each carrying one sample illustration for a thumbnail strip. Anonymous
+         *     callers authenticate upstream through the service token pool.
+         */
+        get: operations["SearchTrendingTags"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search/users": {
         parameters: {
             query?: never;
@@ -1357,6 +1379,16 @@ export interface components {
             os: string;
             /** @description Binary version (main.version), e.g. 3.0.0 or 0.1.0-dev. */
             version: string;
+        };
+        /** @description One trending tag with its sample illustration. */
+        TrendingTag: {
+            illust: components["schemas"]["Illust"];
+            tag: string;
+            translated_name?: string | null;
+        };
+        /** @description Pixiv's trending illustration tags, as served by the App API. */
+        TrendingTagsResponse: {
+            trend_tags: components["schemas"]["TrendingTag"][];
         };
         UgoiraFrame: {
             /** Format: int64 */
@@ -2382,6 +2414,28 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            502: components["responses"]["Upstream"];
+        };
+    };
+    SearchTrendingTags: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trending tags with sample illustrations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrendingTagsResponse"];
+                };
+            };
             401: components["responses"]["Unauthenticated"];
             502: components["responses"]["Upstream"];
         };

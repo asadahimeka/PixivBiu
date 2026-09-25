@@ -219,3 +219,23 @@ func excludeAIOpt(p *ExcludeAiQuery) *int {
 	v := 1
 	return &v
 }
+
+// SearchTrendingTags serves Pixiv's trending-tags-illust feed: the tags du
+// jour, each with one sample illustration for a thumbnail strip. A read —
+// pool-gated like the other reads, so anonymous public callers authenticate
+// upstream through the service token pool. It goes through the raw JSON call
+// path because upstream returns `trend_tags[].tag` as a plain string while
+// pixivgo.TrendTag models it as an object (the typed method fails unmarshaling
+// a perfectly good response).
+func (h *APIHandler) SearchTrendingTags(w http.ResponseWriter, r *http.Request) {
+	if err := h.requirePublicRead(r); err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	var resp pixiv.TrendingTagsResponse
+	if err := h.svc.AppJSONGet(r.Context(), r, "/v1/trending-tags/illust", &resp); err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}

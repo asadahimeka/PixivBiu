@@ -189,3 +189,16 @@ func TestSubmitDownload_AnonymousRejectedBeforeManager(t *testing.T) {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }
+
+// Trending tags is a read: local mode without a session is 401. The public
+// pass path is covered by the generic requirePublicRead gate tests — with a
+// fake pool token the upstream layer also answers 401 (fail-closed), which a
+// unit test cannot distinguish from the gate's own 401.
+func TestSearchTrendingTags_Gate(t *testing.T) {
+	h := NewHandler(unauthedService(t), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	rec := httptest.NewRecorder()
+	h.SearchTrendingTags(rec, httptest.NewRequest(http.MethodGet, "/search/trending-tags", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("local unauthenticated: status = %d, want 401", rec.Code)
+	}
+}

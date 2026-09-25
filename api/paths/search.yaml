@@ -68,3 +68,21 @@ users:
       '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
       '401': { $ref: '../openapi.yaml#/components/responses/Unauthenticated' }
       '502': { $ref: '../openapi.yaml#/components/responses/Upstream' }
+
+trendingTags:
+  get:
+    operationId: searchTrendingTags
+    summary: List trending illustration tags with a sample artwork each
+    description: |
+      Pixiv's current trending tags (the App API trending-tags-illust feed),
+      each carrying one sample illustration for a thumbnail strip. Anonymous
+      callers authenticate upstream through the service token pool.
+    tags: [search]
+    responses:
+      '200':
+        description: Trending tags with sample illustrations.
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/TrendingTagsResponse' }
+      '401': { $ref: '../openapi.yaml#/components/responses/Unauthenticated' }
+      '502': { $ref: '../openapi.yaml#/components/responses/Upstream' }

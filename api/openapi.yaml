@@ -85,6 +85,8 @@ paths:
     $ref: './paths/search.yaml#/illusts'
   /search/users:
     $ref: './paths/search.yaml#/users'
+  /search/trending-tags:
+    $ref: './paths/search.yaml#/trendingTags'
 
   /downloads:
     $ref: './paths/downloads.yaml#/root'
@@ -906,6 +908,33 @@ components:
       properties:
         name:            { type: string }
         translated_name: { type: string, nullable: true }
+
+    TrendingTagsResponse:
+      x-go-type: pixiv.TrendingTagsResponse
+      x-go-type-import:
+        name: pixiv
+        path: github.com/txperl/PixivBiu/internal/pixiv
+      type: object
+      description: Pixiv's trending illustration tags, as served by the App API.
+      required: [trend_tags]
+      properties:
+        trend_tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrendingTag'
+
+    TrendingTag:
+      x-go-type: pixiv.TrendingTag
+      x-go-type-import:
+        name: pixiv
+        path: github.com/txperl/PixivBiu/internal/pixiv
+      type: object
+      description: One trending tag with its sample illustration.
+      required: [tag, illust]
+      properties:
+        tag:             { type: string }
+        translated_name: { type: string, nullable: true }
+        illust:          { $ref: '#/components/schemas/Illust' }
 
     Series:
       x-go-type: pixivgo.Series
