@@ -3,7 +3,7 @@
 // the same-origin backend proxy (GET /api/v1/proxy/img, which disk-caches)
 // as the last fallback. rewritePximgUrl returns the first candidate.
 const PXIMG_HOST = "i.pximg.net";
-const PUBLIC_PROXIES: string[] = ["https://i.pixiv.re", "https://pximg.cocomi.eu.org"];
+const PUBLIC_PROXIES: string[] = ["https://i.pixiv.re", "https://img.rika.club", "https://web.pximg.cc", "https://i.muxmus.com", "https://prox.spacetimee.xyz"];
 const SAME_ORIGIN_FALLBACK = "/api/v1/proxy/img";
 
 export function rewritePximgCandidates(url: string | null | undefined): string[] {
