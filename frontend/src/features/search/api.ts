@@ -6,6 +6,8 @@ export type SearchTarget = components["schemas"]["SearchTarget"];
 export type SearchSort = components["schemas"]["SearchSort"];
 export type SearchDuration = components["schemas"]["SearchDuration"];
 export type ClientMode = components["schemas"]["ClientMode"];
+export type TrendingTag = components["schemas"]["TrendingTag"];
+export type TrendingTagsResponse = components["schemas"]["TrendingTagsResponse"];
 export type IllustPage = components["schemas"]["IllustPage"];
 export type UserPreviewPage = components["schemas"]["UserPreviewPage"];
 export type Illust = components["schemas"]["Illust"];
@@ -134,5 +136,24 @@ export function searchUsersQueryOptions(params: SearchUsersParams) {
         queryKey: ["search-users", params],
         queryFn: () => searchUsers(params).then(unwrap),
         placeholderData: keepPreviousPage(params, ["offset"]),
+    });
+}
+
+// Pixiv's trending-tags-illust feed: the tags du jour, each with one sample
+// illustration for the discovery thumbnail strip. Pool-authenticated read,
+// same as every other read.
+export async function fetchTrendingTags(): Promise<{
+    data: TrendingTagsResponse | null;
+    error: SearchApiError | null;
+}> {
+    const { data, error } = await api.GET("/search/trending-tags");
+    return { data: data ?? null, error: error ?? null };
+}
+
+export function trendingTagsQueryOptions() {
+    return queryOptions<TrendingTagsResponse, SearchApiError>({
+        queryKey: ["search-trending-tags"],
+        queryFn: () => fetchTrendingTags().then(unwrap),
+        staleTime: 10 * 60_000,
     });
 }

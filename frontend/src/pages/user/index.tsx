@@ -202,8 +202,8 @@ function TabBody({
     isError: boolean;
     error: UserApiError | null;
     data: TabData | undefined;
-    selected: Set<number>;
-    onToggle: (id: number) => void;
+    selected?: Set<number>;
+    onToggle?: (id: number) => void;
     filteredIllusts: Illust[];
     totalBefore: number;
 }) {
@@ -240,6 +240,7 @@ function UserPage() {
     const visibleTabs = TABS.filter((t) => !isOwnerOnlyTab(t) || isMe);
 
     const { selected, toggle, replaceSelection, clearSelection } = useIllustSelection();
+    const publicMode = authStatus?.public_read === true;
 
     // Pixiv paginates bookmarks by cursor (max_bookmark_id), built up by paging forward
     // from page 1. Public/private bookmark chains are independent — keep one map per
@@ -441,8 +442,8 @@ function UserPage() {
                     isError={list.isError}
                     error={list.error}
                     data={list.data}
-                    selected={selected}
-                    onToggle={toggle}
+                    selected={publicMode ? undefined : selected}
+                    onToggle={publicMode ? undefined : toggle}
                     filteredIllusts={filtered}
                     totalBefore={totalBefore}
                 />

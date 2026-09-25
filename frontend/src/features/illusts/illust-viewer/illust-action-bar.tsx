@@ -4,8 +4,10 @@ import { Popover, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/features/auth";
 import { downloadIllustViaBrowser } from "@/features/downloads/browser-download";
+import { GuestDownloadButton } from "@/features/downloads/guest-download-button";
 import type { Illust } from "@/features/illusts/api";
 import { BookmarkRestrictOptions } from "@/features/illusts/components/bookmark-restrict-options";
+import { isRestricted, useR18Mask } from "@/features/illusts/r18";
 import type { IllustBookmark } from "@/features/illusts/use-illust-bookmark";
 import { useIllustDownload } from "@/features/illusts/use-illust-download";
 import { useMessages } from "@/i18n";
@@ -114,16 +116,47 @@ function BookmarkCell({ bookmark }: { bookmark: IllustBookmark }) {
 // (moved to features/downloads/browser-download.ts so the card's download
 // button shares the exact same filename fallback)
 
-// Download cell — operator sessions keep the shared useIllustDownload machine
-// (server job; the "sent" check appears only once the job completes, never
-// mid-download). Anonymous sessions never enqueue: the click fetches through
-// rewritePximgCandidates in the browser and saves via an object URL, so no
-// POST /downloads ever leaves the tab. Appearance and position are identical
-// for both paths — same cell, spin while busy, check flash on completion;
-// the error tooltip is only reachable from the server path. The guest check
-// flash is gated on downloadIllustViaBrowser's "saved" so an opened-fallback
-// or empty run never fakes success.
-function DownloadCell({ illust }: { illust: Illust }) {
+// Download cell — dispatcher only, so each mode's component keeps a stable
+// hook list (the same guest/operator split FollowedAuthors uses). Public-mode
+// guests download the current page through the literal <a download> anchor
+// (same-origin image proxy); the server-job and browser-save paths below
+// belong to local mode.
+function DownloadCell({ illust, activePageIndex }: { illust: Illust; activePageIndex: number }) {
+    const { status } = useAuth();
+    const r18Mask = useR18Mask();
+    if (status?.public_read && !status?.authenticated) {
+        // Masked restricted works (zh-CN): no download.
+        if (isRestricted(illust.x_restrict) && r18Mask) return null;
+        return <PublicDownloadCell illust={illust} activePageIndex={activePageIndex} />;
+    }
+    return <LocalDownloadCell illust={illust} />;
+}
+
+function PublicDownloadCell({ illust, activePageIndex }: { illust: Illust; activePageIndex: number }) {
+    const m = useMessages();
+    return (
+        <div className={cn(CELL)}>
+            <GuestDownloadButton
+                illust={illust}
+                pageIndex={activePageIndex}
+                label={m.downloads_btn_download()}
+                className="flex items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            />
+        </div>
+    );
+}
+
+// Local-mode download cell — operator sessions keep the shared
+// useIllustDownload machine (server job; the "sent" check appears only once
+// the job completes, never mid-download). Anonymous local sessions never
+// enqueue: the click fetches through rewritePximgCandidates in the browser
+// and saves via an object URL, so no POST /downloads ever leaves the tab.
+// Appearance and position are identical for both paths — same cell, spin
+// while busy, check flash on completion; the error tooltip is only reachable
+// from the server path. The guest check flash is gated on
+// downloadIllustViaBrowser's "saved" so an opened-fallback or empty run never
+// fakes success.
+function LocalDownloadCell({ illust }: { illust: Illust }) {
     const m = useMessages();
     const { status } = useAuth();
     const authenticated = !!status?.authenticated;
@@ -184,12 +217,20 @@ function DownloadCell({ illust }: { illust: Illust }) {
     );
 }
 
-function IllustActionBar({ illust, bookmark }: { illust: Illust; bookmark: IllustBookmark }) {
+function IllustActionBar({
+    illust,
+    bookmark,
+    activePageIndex,
+}: {
+    illust: Illust;
+    bookmark: IllustBookmark;
+    activePageIndex: number;
+}) {
     const m = useMessages();
     return (
         <div className="inline-flex w-fit divide-x divide-border overflow-hidden rounded-lg border border-border">
             <BookmarkCell bookmark={bookmark} />
-            <DownloadCell illust={illust} />
+            <DownloadCell illust={illust} activePageIndex={activePageIndex} />
             <ActionTooltip label={m.illust_open_on_pixiv()}>
                 <a
                     href={`https://www.pixiv.net/artworks/${illust.id}`}

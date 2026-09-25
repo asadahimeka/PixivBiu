@@ -3,6 +3,7 @@ import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 
 import { useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/features/auth";
 import { SEARCH_PARAM_KEYS } from "@/features/search/api";
 import { useMessages } from "@/i18n";
 import { FilterIcon, GridIcon, SearchIcon } from "@/lib/icons";
@@ -14,6 +15,10 @@ type SearchBarProps = {
 
 function SearchBar({ defaultValue = "", autoFocus = false }: SearchBarProps) {
     const m = useMessages();
+    const { status } = useAuth();
+    // The filter-panel toggle and the grid-layout switch are login-state /
+    // desktop-power-user surfaces; a purely anonymous public site hides both.
+    const publicMode = status?.public_read === true;
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const [value, setValue] = useState(defaultValue);
@@ -73,40 +78,44 @@ function SearchBar({ defaultValue = "", autoFocus = false }: SearchBarProps) {
                 {/*<kbd className="rounded-md bg-card px-2 py-[3px] font-mono text-[11px] text-muted-foreground">⌘K</kbd>*/}
             </div>
 
-            <div className="flex-1" />
+            {!publicMode && (
+                <>
+                    <div className="flex-1" />
 
-            <Tooltip>
-                <TooltipTrigger
-                    render={
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={m.search_bar_filter()}
-                            className="size-10 rounded-full"
-                        >
-                            <HugeiconsIcon icon={FilterIcon} size={18} strokeWidth={1.5} />
-                        </Button>
-                    }
-                />
-                <TooltipContent>{m.search_bar_filter()}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-                <TooltipTrigger
-                    render={
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={m.search_bar_layout()}
-                            className="size-10 rounded-full"
-                        >
-                            <HugeiconsIcon icon={GridIcon} size={18} strokeWidth={1.5} />
-                        </Button>
-                    }
-                />
-                <TooltipContent>{m.search_bar_layout()}</TooltipContent>
-            </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger
+                            render={
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={m.search_bar_filter()}
+                                    className="size-10 rounded-full"
+                                >
+                                    <HugeiconsIcon icon={FilterIcon} size={18} strokeWidth={1.5} />
+                                </Button>
+                            }
+                        />
+                        <TooltipContent>{m.search_bar_filter()}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger
+                            render={
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={m.search_bar_layout()}
+                                    className="size-10 rounded-full"
+                                >
+                                    <HugeiconsIcon icon={GridIcon} size={18} strokeWidth={1.5} />
+                                </Button>
+                            }
+                        />
+                        <TooltipContent>{m.search_bar_layout()}</TooltipContent>
+                    </Tooltip>
+                </>
+            )}
         </form>
     );
 }

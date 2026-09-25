@@ -204,7 +204,7 @@ function IllustInfo({ illust }: { illust: Illust }) {
 // Pinned to the bottom of the info pane (outside the scroll area): read-only stats
 // on the left, the icon action group on the right. Stays visible so bookmark/download
 // are always reachable; kept small and subtle so the scrollable content leads.
-export function IllustEngagementFooter({ illust }: { illust: Illust }) {
+export function IllustEngagementFooter({ illust, activePageIndex }: { illust: Illust; activePageIndex: number }) {
     const m = useMessages();
     // Owned here so the bookmark Stat and the toggle cell share one optimistic
     // source — toggling updates the visible count immediately.
@@ -222,7 +222,7 @@ export function IllustEngagementFooter({ illust }: { illust: Illust }) {
                     <Stat icon={CommentIcon} value={illust.total_comments} label={m.illust_stat_comments()} />
                 )}
             </div>
-            <IllustActionBar illust={illust} bookmark={bookmark} />
+            <IllustActionBar illust={illust} bookmark={bookmark} activePageIndex={activePageIndex} />
         </div>
     );
 }

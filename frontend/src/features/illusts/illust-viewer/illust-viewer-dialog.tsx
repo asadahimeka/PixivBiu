@@ -12,10 +12,14 @@ import IllustInfo, { IllustEngagementFooter } from "./illust-info";
 import IllustStage from "./illust-stage";
 
 function ViewerContent({ illust }: { illust: Illust }) {
+    // Active page lives here so the stage and the engagement footer's
+    // download cell (current-page <a download>) share one source; the key on
+    // the stage/footer remounts reset it per work.
+    const [activePage, setActivePage] = useState(0);
     return (
         <div className="flex h-full flex-col overflow-hidden md:flex-row">
             {/* key remounts the stage on a new work so page/zoom reset */}
-            <IllustStage key={illust.id} illust={illust} />
+            <IllustStage key={illust.id} illust={illust} activePage={activePage} onActivePageChange={setActivePage} />
             <aside className="flex min-h-0 flex-1 flex-col bg-popover md:h-full md:w-[360px] md:flex-none">
                 <ScrollArea className="min-h-0 flex-1">
                     <IllustInfo illust={illust} />
@@ -24,7 +28,7 @@ function ViewerContent({ illust }: { illust: Illust }) {
                     per-illust local UI state (download "sent"/error, bookmark error/popover)
                     when the viewer switches to another work; bookmark count/state itself is
                     cache-derived, so a same-id detail refetch updates it via props. */}
-                <IllustEngagementFooter key={illust.id} illust={illust} />
+                <IllustEngagementFooter key={illust.id} illust={illust} activePageIndex={activePage} />
             </aside>
         </div>
     );

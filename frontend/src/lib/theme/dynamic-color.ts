@@ -6,7 +6,7 @@ import {
     SchemeTonalSpot,
 } from "@material/material-color-utilities";
 
-export const DEFAULT_SEED_COLOR = "#C8553D";
+export const DEFAULT_SEED_COLOR = "#A78BFA";
 
 const STYLE_ELEMENT_ID = "dynamic-color-scheme";
 

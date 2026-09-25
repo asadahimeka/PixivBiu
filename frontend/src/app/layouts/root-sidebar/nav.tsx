@@ -154,15 +154,19 @@ function Nav() {
         badge: activeCount > 0 ? activeCount : undefined,
     };
 
-    const groups: NavGroupDef[] = [
-        browseGroup,
-        { id: "personal", label: m.nav_group_personal(), items: personalItems },
-        {
-            id: "tools",
-            label: m.nav_group_tools(),
-            items: publicMode ? [settingsItem] : [downloadsItem, settingsItem],
-        },
-    ];
+    // Public mode: browse-only sidebar — personal entries and the settings/
+    // downloads surfaces are login-state concepts a public site must not show.
+    const groups: NavGroupDef[] = publicMode
+        ? [browseGroup]
+        : [
+              browseGroup,
+              { id: "personal", label: m.nav_group_personal(), items: personalItems },
+              {
+                  id: "tools",
+                  label: m.nav_group_tools(),
+                  items: [downloadsItem, settingsItem],
+              },
+          ];
 
     return (
         <nav className="flex flex-col gap-4">

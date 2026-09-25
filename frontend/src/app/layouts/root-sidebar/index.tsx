@@ -1,7 +1,10 @@
-import { AccountButton } from "@/features/auth";
+import { AccountButton, useAuth } from "@/features/auth";
 import Nav from "./nav";
+import { SidebarFooter } from "./sidebar-footer";
 
 function RootSidebar() {
+    const { status } = useAuth();
+    const publicMode = status?.public_read === true;
     return (
         // pt: 1rem in the browser; on the macOS frameless shell the wordmark
         // drops below the traffic lights (--traffic-lights-inset, desktop.css).
@@ -19,9 +22,7 @@ function RootSidebar() {
 
             <div className="flex-1" />
 
-            <div className="flex flex-col gap-3">
-                <AccountButton />
-            </div>
+            <div className="flex flex-col gap-3">{publicMode ? <SidebarFooter /> : <AccountButton />}</div>
         </aside>
     );
 }

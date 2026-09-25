@@ -15,11 +15,17 @@ import type { ApiError } from "@/lib/api";
 export function offsetInfiniteQueryOptions<T extends { next_offset?: number | null }>(opts: {
     queryKey: QueryKey;
     fetchPage: (offset: number) => Promise<T>; // caller resolves with `.then(unwrap)`
+    // Optional freshness overrides; undefined defers to the client defaults
+    // (staleTime 60s, gcTime 5min).
+    staleTime?: number;
+    gcTime?: number;
 }) {
     return infiniteQueryOptions<T, ApiError, InfiniteData<T, number>, QueryKey, number>({
         queryKey: opts.queryKey,
         queryFn: ({ pageParam }) => opts.fetchPage(pageParam),
         initialPageParam: 0,
         getNextPageParam: (last) => last.next_offset ?? undefined, // undefined ⇒ hasNextPage:false
+        staleTime: opts.staleTime,
+        gcTime: opts.gcTime,
     });
 }

@@ -35,21 +35,11 @@ function AccountButton() {
     }
 
     // Public mode: the login surface is closed server-side (even Sign out
-    // answers 404), so the account area is a static guest row for everyone —
-    // no Sign in entry, no menu, no dead click target. Local mode keeps the
-    // sign-in button / account menu exactly as before.
+    // answers 404), so the account area renders nothing at all — a purely
+    // anonymous site has no identity row, not even a "guest" chip. Local mode
+    // keeps the sign-in button / account menu exactly as before.
     if (status.public_read) {
-        return (
-            <div className="flex w-full items-center gap-3 px-2 py-1.5 text-left">
-                <span
-                    aria-hidden
-                    className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                >
-                    <HugeiconsIcon icon={ChevronRightIcon} size={16} strokeWidth={1.5} />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">{m.auth_guest()}</span>
-            </div>
-        );
+        return null;
     }
 
     if (!status.authenticated) {

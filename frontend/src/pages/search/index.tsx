@@ -8,7 +8,7 @@ function SearchPage() {
     const keyword = rawKeyword ?? "";
 
     return (
-        <div className="relative flex flex-col gap-4 px-7 pt-4 pb-7">
+        <div className="relative flex flex-col gap-4 px-4 pt-4 pb-7 md:px-7">
             <SearchBar defaultValue={keyword} autoFocus={!keyword} />
             {keyword ? <SearchResults keyword={keyword} /> : <SearchDiscovery />}
         </div>

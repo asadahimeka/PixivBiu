@@ -1,7 +1,9 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import PximgImage from "@/components/pximg-image";
+import { ugoiraAvifUrl } from "@/features/downloads/guest-download-button";
 import { type Illust, illustPageUrls, illustZoomUrl } from "@/features/illusts/api";
+import { isRestricted, R18Badge, useR18Mask } from "@/features/illusts/r18";
 import { useMessages } from "@/i18n";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -50,17 +52,40 @@ function containFraction(clientX: number, clientY: number, img: HTMLImageElement
     };
 }
 
-function IllustStage({ illust }: { illust: Illust }) {
+function IllustStage({
+    illust,
+    activePage,
+    onActivePageChange,
+}: {
+    illust: Illust;
+    activePage: number;
+    onActivePageChange: (n: number) => void;
+}) {
     const m = useMessages();
     const pages = useMemo(() => illustPageUrls(illust), [illust]);
     const total = pages.length;
 
-    const [active, setActive] = useState(0);
+    const active = activePage;
+    const setActive = onActivePageChange;
     const [zoomed, setZoomed] = useState(false);
     const [anchor, setAnchor] = useState<ZoomAnchor | null>(null);
     const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
     const stageRef = useRef<HTMLDivElement>(null); // the area the zoom layer overlays
     const fitImgRef = useRef<HTMLImageElement | null>(null); // current fit-view <img>
+
+    // Ugoira works animate through the public AVIF conversion service; on
+    // failure (third-party availability) they fall back to the static frame
+    // they always showed. The zoom layer keeps using the original source.
+    const avifSrc = illust.type === "ugoira" ? ugoiraAvifUrl(illust.id) : null;
+    const [avifFailed, setAvifFailed] = useState(false);
+    const showAvif = avifSrc != null && !avifFailed;
+
+    // Restricted works blur until the first click (an explicit reveal); zoom
+    // stays suppressed until revealed, so the unblurred original is never a
+    // stray click away.
+    const r18Mask = useR18Mask();
+    const [r18Revealed, setR18Revealed] = useState(false);
+    const showMask = isRestricted(illust.x_restrict) && r18Mask && !r18Revealed;
 
     const zoomSrc = useMemo(() => illustZoomUrl(illust, active), [illust, active]);
 
@@ -75,6 +100,10 @@ function IllustStage({ illust }: { illust: Illust }) {
     // image isn't measurable yet (clicked before it loaded) or a synthetic click reports
     // detail 0 / clientX-Y 0, which aren't real coordinates.
     const openZoom = (e: ReactMouseEvent<HTMLDivElement>) => {
+        if (showMask) {
+            setR18Revealed(true);
+            return;
+        }
         const stage = stageRef.current;
         const img = fitImgRef.current;
         if (e.detail > 0 && stage && img?.isConnected && img.naturalWidth > 0) {
@@ -92,14 +121,25 @@ function IllustStage({ illust }: { illust: Illust }) {
         thumbRefs.current[active]?.scrollIntoView({ inline: "center", block: "nearest" });
     }, [active]);
 
-    const imageEl = (
+    const imageEl = showAvif ? (
+        <img
+            key={avifSrc}
+            src={avifSrc}
+            alt={illust.title}
+            className={cn("size-full object-contain", showMask && "scale-110 blur-xl")}
+            onLoad={(e) => {
+                fitImgRef.current = e.currentTarget;
+            }}
+            onError={() => setAvifFailed(true)}
+        />
+    ) : (
         <PximgImage
             key={pages[active]}
             src={pages[active]}
             alt={illust.title}
             fit="contain"
             fallback={<div className="size-full bg-foreground/5" />}
-            className="size-full"
+            className={cn("size-full", showMask && "scale-110 blur-xl")}
             onLoad={(img) => {
                 fitImgRef.current = img;
             }}
@@ -113,8 +153,12 @@ function IllustStage({ illust }: { illust: Illust }) {
                     isn't keyboard-activatable. */}
                 {/* biome-ignore lint/a11y/noStaticElementInteractions: mouse-only zoom by design */}
                 {/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation intentionally removed */}
-                <div onClick={openZoom} className="size-full cursor-zoom-in p-2 md:p-4">
+                <div
+                    onClick={openZoom}
+                    className={cn("size-full p-2 md:p-4", showMask ? "cursor-pointer" : "cursor-zoom-in")}
+                >
                     {imageEl}
+                    {showMask && <R18Badge xRestrict={illust.x_restrict} />}
                 </div>
 
                 {total > 1 && (

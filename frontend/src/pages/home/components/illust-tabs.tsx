@@ -73,6 +73,11 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
     const authenticated = !!status?.authenticated;
     const scope = authQueryScope(authenticated);
     const { selected, toggle, replaceSelection, clearSelection } = useIllustSelection();
+    // Public mode: "推荐 + 本周热门" only — the following feed is an
+    // identity concept, and card selection feeds the operator-only batch
+    // download, so neither exists for guests.
+    const publicMode = status?.public_read === true;
+    const visibleTabIds = publicMode ? TAB_IDS.filter((id) => id !== "follow") : TAB_IDS;
     const [forYou, setForYou] = useState<ForYouParams>(DEFAULT_FOR_YOU);
     const [follow, setFollow] = useState<FollowParams>(DEFAULT_FOLLOW);
 
@@ -187,7 +192,7 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
             <div data-app-controls="" className="mb-4 flex items-center border-muted/60 border-b">
                 <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1">
                     <TabsList variant="line" className="h-12 gap-0">
-                        {TAB_IDS.map((id) => (
+                        {visibleTabIds.map((id) => (
                             <TabsTrigger
                                 key={id}
                                 value={id}
@@ -238,7 +243,11 @@ function HomeIllustTabs({ activeTab, onActiveTabChange }: HomeIllustTabsProps) {
                 <FilteredEmpty totalBefore={totalBefore} />
             ) : (
                 <>
-                    <IllustGrid illusts={filtered} selected={selected} onToggle={toggle} />
+                    <IllustGrid
+                        illusts={filtered}
+                        selected={publicMode ? undefined : selected}
+                        onToggle={publicMode ? undefined : toggle}
+                    />
                     {query.hasNextPage && (
                         <div className="flex justify-end pt-6 pb-2">
                             <button

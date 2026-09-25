@@ -3,7 +3,9 @@ import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/features/auth";
 import { downloadIllustViaBrowser } from "@/features/downloads/browser-download";
+import { GuestDownloadButton } from "@/features/downloads/guest-download-button";
 import type { Illust } from "@/features/illusts/api";
+import { isRestricted, useR18Mask } from "@/features/illusts/r18";
 import { useIllustDownload } from "@/features/illusts/use-illust-download";
 import { useMessages } from "@/i18n";
 import { CheckIcon, DownloadIcon } from "@/lib/icons";
@@ -39,12 +41,25 @@ function IllustDownloadButton({ illust, className }: IllustDownloadButtonProps) 
         [],
     );
 
-    // Card download is a login-state control: hidden for public-mode guests
-    // (its server path needs the operator session, and the anonymous path has
-    // no login surface behind it either). The viewer's action-cell download
-    // is deliberately NOT gated — that's the Task 4 anonymous browser-save
-    // path. Local mode keeps this button for guests, pixel-identical.
-    if (status?.public_read && !status?.authenticated) return null;
+    // Masked restricted works (zh-CN) are hard-blocked: no download at all.
+    const r18Mask = useR18Mask();
+    const masked = isRestricted(illust.x_restrict) && r18Mask;
+    if (masked) return null;
+
+    // Card download: operator sessions enqueue a server job; public-mode
+    // guests get the single-file guest download (first page, through the
+    // public image proxies). Local-mode guests keep the anonymous
+    // browser-save path.
+    if (status?.public_read && !status?.authenticated) {
+        return (
+            <GuestDownloadButton
+                illust={illust}
+                pageIndex={0}
+                label={m.downloads_btn_download()}
+                className="absolute right-3.5 bottom-3.5 flex size-10 scale-90 items-center justify-center rounded-xl bg-primary text-primary-foreground opacity-0 shadow-md transition-all duration-300 group-hover:scale-100 group-hover:opacity-100"
+            />
+        );
+    }
 
     const guestDownload = async () => {
         if (guestBusy) return;

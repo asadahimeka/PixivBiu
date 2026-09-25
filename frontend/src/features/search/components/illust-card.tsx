@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import IllustDownloadButton from "@/features/downloads/components/illust-download-button";
 import { illustPageUrls } from "@/features/illusts/api";
 import { useIllustViewer } from "@/features/illusts/illust-viewer";
+import { isRestricted, R18Badge, useR18Mask } from "@/features/illusts/r18";
 import type { Illust } from "@/features/search/api";
 import IllustBookmarkButton from "@/features/search/components/illust-bookmark-button";
 import IllustPlaceholderArt from "@/features/search/components/illust-placeholder-art";
@@ -28,6 +29,10 @@ function IllustCard({ illust, selected = false, selectMode = false, onSelect }: 
     const selectable = onSelect != null;
     const selectActive = selectable && selectMode;
     const hue = hueFromId(illust.id);
+    // Restricted works blur behind their label in masked locales; the viewer
+    // reveals on click, so the card stays a safe thumbnail.
+    const r18Mask = useR18Mask();
+    const masked = isRestricted(illust.x_restrict) && r18Mask;
     const { open: openViewer } = useIllustViewer();
 
     const fallbackAspect = illust.width > 0 && illust.height > 0 ? illust.width / illust.height : 1;
@@ -61,6 +66,8 @@ function IllustCard({ illust, selected = false, selectMode = false, onSelect }: 
 
     // Plain click/Enter/Space either selects (in select mode) or opens the viewer.
     const activate = () => {
+        // Masked restricted works are a hard block: no viewer, no preview.
+        if (masked) return;
         if (selectActive) onSelect?.(illust.id);
         else openViewer(illust);
     };
@@ -88,12 +95,18 @@ function IllustCard({ illust, selected = false, selectMode = false, onSelect }: 
                 role="button"
                 tabIndex={0}
             >
-                <PximgImage
-                    src={illust.image_urls.square_medium}
-                    alt={illust.title}
-                    fallback={<IllustPlaceholderArt hue={hue} ratio="1/1" rounded={12} />}
-                    className="aspect-square w-full rounded-xl object-cover"
-                />
+                <div className="relative">
+                    <PximgImage
+                        src={illust.image_urls.square_medium}
+                        alt={illust.title}
+                        fallback={<IllustPlaceholderArt hue={hue} ratio="1/1" rounded={12} />}
+                        className={cn(
+                            "aspect-square w-full rounded-xl object-cover transition-[filter]",
+                            masked && "scale-110 blur-xl",
+                        )}
+                    />
+                    {masked && <R18Badge xRestrict={illust.x_restrict} />}
+                </div>
 
                 <div className="pointer-events-none absolute inset-2 rounded-xl bg-black/4 opacity-0 transition-opacity group-hover:opacity-100" />
 
@@ -119,74 +132,78 @@ function IllustCard({ illust, selected = false, selectMode = false, onSelect }: 
                 )}
 
                 <div className="pointer-events-none absolute top-3.5 right-3.5">
-                    {illust.page_count > 1 && (
+                    {!masked && illust.page_count > 1 && (
                         <div className="flex items-center gap-1 rounded-full bg-[rgba(30,20,15,0.7)] px-2 py-[3px] font-mono text-[10.5px] text-white backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-0">
                             <HugeiconsIcon icon={PagesIcon} size={11} strokeWidth={1.5} />
                             {illust.page_count}
                         </div>
                     )}
 
-                    <div className="pointer-events-auto absolute top-0 right-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                        <Popover open={open} onOpenChange={setOpen}>
-                            <PopoverTrigger
-                                render={<div />}
-                                nativeButton={false}
-                                aria-label={totalPages > 1 ? `Preview (${totalPages} pages)` : "Preview"}
-                                className={cn(
-                                    "flex cursor-default items-center rounded-full bg-[rgba(30,20,15,0.7)] px-2.5 py-2 outline-none backdrop-blur-sm",
-                                    illust.page_count <= 1 && "px-2",
-                                )}
-                                onMouseEnter={(e) => {
-                                    updateActivePage(e);
-                                    setOpen(true);
-                                }}
-                                onMouseLeave={() => setOpen(false)}
-                                onMouseMove={updateActivePage}
-                            >
-                                <div ref={dotsRef} className="flex items-center gap-1">
-                                    {allPages.slice(0, displayedDots).map((page, i) => (
-                                        <span
-                                            key={page.key}
-                                            className={cn(
-                                                "block h-1.5 w-1.5 rounded-full transition-colors",
-                                                open && i === activeDot ? "bg-white" : "bg-white/55",
-                                            )}
-                                        />
-                                    ))}
-                                </div>
-                            </PopoverTrigger>
-                            <PopoverContent side="right" sideOffset={8} className="w-auto p-1.5">
-                                <div
-                                    className="relative overflow-hidden rounded-md bg-muted"
-                                    style={{
-                                        aspectRatio: currentAspect,
-                                        width: currentIsWide ? PREVIEW_SIDE : undefined,
-                                        height: currentIsWide ? undefined : PREVIEW_SIDE,
-                                    }}
-                                >
-                                    <PximgImage
-                                        key={allPages[activePage].src}
-                                        src={allPages[activePage].src}
-                                        alt={illust.title}
-                                        fallback={<IllustPlaceholderArt hue={hue} rounded={6} fill />}
-                                        className="block h-full w-full object-cover"
-                                        onLoad={(img) => {
-                                            if (!img.naturalWidth || !img.naturalHeight) return;
-                                            const ratio = img.naturalWidth / img.naturalHeight;
-                                            setPageAspects((prev) =>
-                                                prev[activePage] === ratio ? prev : { ...prev, [activePage]: ratio },
-                                            );
-                                        }}
-                                    />
-                                    {totalPages > 1 && (
-                                        <div className="absolute top-2 right-2 rounded-full bg-[rgba(30,20,15,0.7)] px-2 py-[3px] font-mono text-[10.5px] text-white backdrop-blur-sm">
-                                            {activePage + 1}/{totalPages}
-                                        </div>
+                    {!masked && (
+                        <div className="pointer-events-auto absolute top-0 right-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                            <Popover open={open} onOpenChange={setOpen}>
+                                <PopoverTrigger
+                                    render={<div />}
+                                    nativeButton={false}
+                                    aria-label={totalPages > 1 ? `Preview (${totalPages} pages)` : "Preview"}
+                                    className={cn(
+                                        "flex cursor-default items-center rounded-full bg-[rgba(30,20,15,0.7)] px-2.5 py-2 outline-none backdrop-blur-sm",
+                                        illust.page_count <= 1 && "px-2",
                                     )}
-                                </div>
-                            </PopoverContent>
-                        </Popover>
-                    </div>
+                                    onMouseEnter={(e) => {
+                                        updateActivePage(e);
+                                        setOpen(true);
+                                    }}
+                                    onMouseLeave={() => setOpen(false)}
+                                    onMouseMove={updateActivePage}
+                                >
+                                    <div ref={dotsRef} className="flex items-center gap-1">
+                                        {allPages.slice(0, displayedDots).map((page, i) => (
+                                            <span
+                                                key={page.key}
+                                                className={cn(
+                                                    "block h-1.5 w-1.5 rounded-full transition-colors",
+                                                    open && i === activeDot ? "bg-white" : "bg-white/55",
+                                                )}
+                                            />
+                                        ))}
+                                    </div>
+                                </PopoverTrigger>
+                                <PopoverContent side="right" sideOffset={8} className="w-auto p-1.5">
+                                    <div
+                                        className="relative overflow-hidden rounded-md bg-muted"
+                                        style={{
+                                            aspectRatio: currentAspect,
+                                            width: currentIsWide ? PREVIEW_SIDE : undefined,
+                                            height: currentIsWide ? undefined : PREVIEW_SIDE,
+                                        }}
+                                    >
+                                        <PximgImage
+                                            key={allPages[activePage].src}
+                                            src={allPages[activePage].src}
+                                            alt={illust.title}
+                                            fallback={<IllustPlaceholderArt hue={hue} rounded={6} fill />}
+                                            className="block h-full w-full object-cover"
+                                            onLoad={(img) => {
+                                                if (!img.naturalWidth || !img.naturalHeight) return;
+                                                const ratio = img.naturalWidth / img.naturalHeight;
+                                                setPageAspects((prev) =>
+                                                    prev[activePage] === ratio
+                                                        ? prev
+                                                        : { ...prev, [activePage]: ratio },
+                                                );
+                                            }}
+                                        />
+                                        {totalPages > 1 && (
+                                            <div className="absolute top-2 right-2 rounded-full bg-[rgba(30,20,15,0.7)] px-2 py-[3px] font-mono text-[10.5px] text-white backdrop-blur-sm">
+                                                {activePage + 1}/{totalPages}
+                                            </div>
+                                        )}
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+                    )}
                 </div>
 
                 {selectable && <IllustDownloadButton illust={illust} />}

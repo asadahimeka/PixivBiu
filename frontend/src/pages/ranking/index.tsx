@@ -3,6 +3,7 @@ import { useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import ListLoadingOverlay from "@/components/list-loading-overlay";
 import { useFilterPanel } from "@/features/activity-bar";
+import { useAuth } from "@/features/auth";
 import { useIllustSelection } from "@/features/downloads";
 import { FilteredEmpty, useFilteredIllusts } from "@/features/filter";
 import {
@@ -68,6 +69,8 @@ function RankingPage() {
     );
 
     const { selected, toggle, replaceSelection, clearSelection } = useIllustSelection();
+    const { status } = useAuth();
+    const publicMode = status?.public_read === true;
 
     // Reset selection whenever the list identity (mode/date/page) changes — the
     // previous list's selection must not bleed across a navigation. Replaces the
@@ -118,7 +121,7 @@ function RankingPage() {
     };
 
     return (
-        <div className="relative flex flex-col gap-4 px-7 pt-7 pb-7">
+        <div className="relative flex flex-col gap-4 px-4 pt-7 pb-7 md:px-7">
             <header className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
                 <h1 className="font-semibold text-5xl text-foreground">{m.ranking_title()}</h1>
                 <RankingDatePicker date={date} onDateChange={onDateChange} />
@@ -141,7 +144,11 @@ function RankingPage() {
                 ) : filtered.length === 0 ? (
                     <FilteredEmpty totalBefore={totalBefore} />
                 ) : (
-                    <IllustGrid illusts={filtered} selected={selected} onToggle={toggle} />
+                    <IllustGrid
+                        illusts={filtered}
+                        selected={publicMode ? undefined : selected}
+                        onToggle={publicMode ? undefined : toggle}
+                    />
                 )}
             </ListLoadingOverlay>
 

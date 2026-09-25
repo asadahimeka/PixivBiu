@@ -1,48 +1,29 @@
-import { useEffect, useState } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
+import PximgImage from "@/components/pximg-image";
 import { Skeleton } from "@/components/ui/skeleton";
-import { listRanking } from "@/features/ranking/api";
-import {
-    extractTopTags,
-    readTrendingCache,
-    type TrendingTag,
-    writeTrendingCache,
-} from "@/features/search/trending-tags";
+import { isRestricted, R18Badge, useR18Mask } from "@/features/illusts/r18";
+import { type TrendingTag, trendingTagsQueryOptions } from "@/features/search/api";
 import { useMessages } from "@/i18n";
+import { TagIcon } from "@/lib/icons";
+import { cn } from "@/lib/utils";
 
 const TRENDING_LIMIT = 18;
 
-type State = { status: "loading" } | { status: "ready"; tags: TrendingTag[] } | { status: "error" };
+function tagLabel(t: TrendingTag): string {
+    return t.translated_name ?? t.tag;
+}
 
+// Trending tags with one sample artwork each — straight from the
+// /search/trending-tags feed (Pixiv's own trending-tags-illust, authenticated
+// by the anonymous read pool), not the derived-from-ranking approximation.
 function DiscoveryTrending() {
     const m = useMessages();
     const navigate = useNavigate();
-    const [state, setState] = useState<State>(() => {
-        const cached = readTrendingCache();
-        return cached && cached.length > 0 ? { status: "ready", tags: cached } : { status: "loading" };
-    });
-
-    useEffect(() => {
-        if (state.status !== "loading") return;
-        let cancelled = false;
-        listRanking({ mode: "day" }).then(({ data, error }) => {
-            if (cancelled) return;
-            if (error || !data) {
-                setState({ status: "error" });
-                return;
-            }
-            const tags = extractTopTags(data.illusts, TRENDING_LIMIT);
-            writeTrendingCache(tags);
-            setState({ status: "ready", tags });
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [state.status]);
-
-    const go = (name: string) => {
-        navigate(`/search/${encodeURIComponent(name)}`);
-    };
+    const r18Mask = useR18Mask();
+    const query = useQuery(trendingTagsQueryOptions());
+    const tags = query.data?.trend_tags.slice(0, TRENDING_LIMIT) ?? [];
 
     return (
         <section className="flex flex-col gap-3">
@@ -50,32 +31,52 @@ function DiscoveryTrending() {
                 <h2 className="m-0 font-medium text-2xl text-foreground leading-tight">{m.search_trending_title()}</h2>
                 <span className="font-mono text-muted-foreground text-xs">{m.search_trending_daily()}</span>
             </div>
-            {state.status === "loading" && (
-                <div className="flex flex-wrap gap-2">
-                    {Array.from({ length: 10 }).map((_, i) => (
+            {query.isPending && (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+                    {Array.from({ length: 12 }).map((_, i) => (
                         // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders
-                        <Skeleton key={i} className="h-7 w-18 rounded-full" />
+                        <div key={i} className="flex flex-col gap-2">
+                            <Skeleton className="aspect-square w-full rounded-2xl" />
+                            <Skeleton className="h-3.5 w-20" />
+                        </div>
                     ))}
                 </div>
             )}
-            {state.status === "error" && (
-                <div className="text-muted-foreground text-sm">{m.search_trending_error()}</div>
-            )}
-            {state.status === "ready" &&
-                (state.tags.length === 0 ? (
+            {query.isError && <div className="text-muted-foreground text-sm">{m.search_trending_error()}</div>}
+            {query.isSuccess &&
+                (tags.length === 0 ? (
                     <div className="text-lg text-muted-foreground">{m.common_empty()}</div>
                 ) : (
-                    <div className="flex flex-wrap gap-2">
-                        {state.tags.map((t) => (
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+                        {tags.map((t) => (
                             <button
-                                key={t.name}
+                                key={t.tag}
                                 type="button"
-                                onClick={() => go(t.name)}
-                                title={t.label === t.name ? undefined : t.name}
-                                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-input px-2.5 text-muted-foreground text-xs transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary"
+                                onClick={() => navigate(`/search/${encodeURIComponent(t.tag)}`)}
+                                title={tagLabel(t) === t.tag ? undefined : t.tag}
+                                className="group flex flex-col gap-1.5 text-left"
                             >
-                                <span className="max-w-[180px] truncate">{t.label}</span>
-                                <span className="font-mono text-[10px] text-muted-foreground/80">{t.count}</span>
+                                <span className="relative block aspect-square w-full overflow-hidden rounded-2xl bg-muted">
+                                    <PximgImage
+                                        src={t.illust.image_urls.square_medium ?? t.illust.image_urls.medium}
+                                        alt={tagLabel(t)}
+                                        fallback={
+                                            <span className="flex size-full items-center justify-center text-muted-foreground">
+                                                <HugeiconsIcon icon={TagIcon} size={20} strokeWidth={1.5} />
+                                            </span>
+                                        }
+                                        className={cn(
+                                            "size-full transition-transform duration-300 group-hover:scale-105",
+                                            isRestricted(t.illust.x_restrict) && r18Mask && "scale-110 blur-xl",
+                                        )}
+                                    />
+                                    {isRestricted(t.illust.x_restrict) && r18Mask && (
+                                        <R18Badge xRestrict={t.illust.x_restrict} />
+                                    )}
+                                </span>
+                                <span className="truncate text-muted-foreground text-xs group-hover:text-foreground">
+                                    {tagLabel(t)}
+                                </span>
                             </button>
                         ))}
                     </div>

@@ -89,6 +89,10 @@ export function recommendedInfiniteQueryOptions(params: ListRecommendedParams, s
     return offsetInfiniteQueryOptions<IllustPage>({
         queryKey: [scope, "recommended-infinite", params],
         fetchPage: (offset) => listRecommended({ ...params, offset }).then(unwrap),
+        // First entry only: returning to home must serve the cached feed, not
+        // reshuffle it (the feed reorders on every upstream call).
+        staleTime: Infinity,
+        gcTime: Infinity,
     });
 }
 
